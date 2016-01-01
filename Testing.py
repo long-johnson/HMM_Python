@@ -5,13 +5,15 @@
 """
 
 import numpy as np
+
 from HiddenMarkovModel import HiddenMarkovModel
+from HiddenMarkovModel import generate_discrete_distribution
 
 # generating
-T = 5
+T = 10
 N = 2
 M = 2
-Pi = np.array([0.4, 0.6])
+"""Pi = np.array([0.4, 0.6])
 A = np.array([
     [0.2, 0.8],
     [0.8, 0.2]
@@ -20,9 +22,12 @@ B = np.array([
     [0.4, 0.6],
     [0.7, 0.3]
     ])
-hmm = HiddenMarkovModel(N,M,pi=Pi,a=A,b=B)
+hmm = HiddenMarkovModel(N,M,pi=Pi,a=A,b=B)"""
 
-#hmm = HiddenMarkovModel(N,M)
+#hmm = HiddenMarkovModel(N, M)
+
+hmm = HiddenMarkovModel(N, M, seed=563)
+
 seq = hmm.generate_sequence(T, seed=563)
 print seq
 print np.histogram(seq, bins=[0,1,2,3], normed=True)
@@ -51,3 +56,15 @@ print "alphas absdiff = " + str(np.abs(alphas_noscale-alphas_logsumexp))
 # calculate difference between alphas of noscaling and logsumexp:
 print "alphas reldiff = " \
       + str(np.abs(alphas_noscale-alphas_logsumexp) / alphas_noscale)
+print
+# testing generate_discrete_distribution function
+#distr = generate_discrete_distribution(10)
+#print distr
+#print np.sum(distr)
+
+#
+#hmm = HiddenMarkovModel(N, M, seed=236)
+print "\nHMM generated params:"
+print hmm.pi
+print hmm.a
+print hmm.b
