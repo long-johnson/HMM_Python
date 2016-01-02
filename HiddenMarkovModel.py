@@ -61,13 +61,15 @@ class HiddenMarkovModel:
         alpha[0,:] = self.pi * self.b[:,seq[0]]
         # induction step:
         for t in range(T-1):
-            alpha[t+1,:] = \
-                self.b[:,seq[t+1]] * np.sum(alpha[t,:]*self.a[:,:], axis=1)
+            for i in range(self.n):
+                alpha[t+1,i] = \
+                    self.b[i,seq[t+1]] * np.sum(alpha[t,:]*self.a[:,i])
         # termination:
-        likelihood = np.sum(alpha[T-1, :])
+        likelihood = np.sum(alpha[T-1,:])
         return likelihood, alpha
-        
+    
     def calc_likelihood_logsumexp(self, seq, T):
+        # TODO: needs to be thought through more carefully
         """ l-hood of sequence being produced by model (log-sum-exp trick)
         seq -- sequence of observations (1d array)
         T -- length of sequence
@@ -76,7 +78,7 @@ class HiddenMarkovModel:
         """        
         # initialization step:
         log_alpha = np.empty((T, self.n))
-        log_alpha[0,:] = np.log(self.pi * self.b[:,seq[0]])
+        log_alpha[0, :] = np.log(self.pi * self.b[:,seq[0]])
         # induction step:
         for t in range(T-1):
             # for each state calc forward variable
@@ -87,7 +89,7 @@ class HiddenMarkovModel:
                 max_log_temp = np.max(log_temps)
                 # apply log-sum-exp trick
                 log_alpha[t+1,i] = max_log_temp + \
-                    np.log(np.sum(np.exp(log_temps-max_log_temp)))
+                    np.log(np.sum(np.exp(log_temps[:]-max_log_temp)))
         # termination: apply exp() since we calculated logarithms
         alpha = np.exp(log_alpha[:,:])
         likelihood = np.sum(alpha[T-1,:])
@@ -107,14 +109,16 @@ class HiddenMarkovModel:
         c = np.empty(T)
         # initialization
         alpha_pr[:] = self.pi[:] * self.b[:,seq[0]]
-        c[0] = 1.0 / np.sum(alpha[:])
-        sc_alpha[0, :] = alpha[:] * c[0]
+        c[0] = 1.0 / np.sum(alpha_pr[:])
+        sc_alpha[0, :] = alpha_pr[:] * c[0]
         # induction
         for t in range(T-1):
-            alpha[:] = \
-                self.b[:,seq[t+1]] * np.sum(alpha_pr[:]*self.a[:,:], axis=0)
+            for i in range(self.n):
+                alpha[i] = \
+                    c[t] * self.b[i,seq[t+1]] * np.sum(alpha_pr[:]*self.a[:,i])
             c[t+1] = 1.0 / np.sum(alpha[:])
             sc_alpha[t+1,:] = alpha[:] * c[t+1]
+            alpha_pr = alpha.copy()
         # termination:
         loglikelihood = -np.sum(np.log(c[:]))
         return loglikelihood, sc_alpha[:,:], c[:]

@@ -10,9 +10,9 @@ from HiddenMarkovModel import HiddenMarkovModel
 from HiddenMarkovModel import generate_discrete_distribution
 
 # generating
-T = 10
-N = 3
-M = 3
+T = 100
+N = 2
+M = 2
 """Pi = np.array([0.4, 0.6])
 A = np.array([
     [0.2, 0.8],
@@ -70,6 +70,6 @@ print hmm.a
 print hmm.b
 
 print 
-print "No scaling:" + str(hmm.calc_likelihood_noscaling(seq, T)[0])
-print "Log-sum-exp:" + str(hmm.calc_likelihood_logsumexp(seq, T)[0])
-print "Scaled:" + str(np.exp(hmm.calc_likelihood_scaled(seq, T)[0]))
+print "No scaling: " + str(hmm.calc_likelihood_noscaling(seq, T)[0])
+print "Log-sum-exp: " + str(hmm.calc_likelihood_logsumexp(seq, T)[0])
+print "Scaled: " + str(np.exp(hmm.calc_likelihood_scaled(seq, T)[0]))
