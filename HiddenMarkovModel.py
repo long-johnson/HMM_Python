@@ -20,7 +20,6 @@ class HiddenMarkovModel:
         """
         if seed is not None:
             np.random.seed(seed)        
-        
         self.n = n
         self.m = m
         # if parameters are not defined - give them some statistically correct
@@ -31,7 +30,7 @@ class HiddenMarkovModel:
             self.pi = np.full(n, 1.0/n)
         else:
             self.pi = generate_discrete_distribution(n)
-            
+        # transition matrix
         if a is not None:
             self.a = a.copy()
         elif seed is None:
@@ -40,7 +39,7 @@ class HiddenMarkovModel:
             self.a = np.empty(shape=(n, n))
             for i in range(n):
                 self.a[i, :] = generate_discrete_distribution(n)          
-            
+        # emission matrix
         if b is not None:
             self.b = b.copy()
         elif seed is None:
@@ -64,6 +63,7 @@ class HiddenMarkovModel:
         for t in range(T-1):
             alpha[t+1,:] = \
                 self.b[:,seq[t+1]] * np.sum(alpha[t,:]*self.a[:,:], axis=1)
+        # termination:
         likelihood = np.sum(alpha[T-1, :])
         return likelihood, alpha
         
@@ -71,7 +71,7 @@ class HiddenMarkovModel:
         """ l-hood of sequence being produced by model (log-sum-exp trick)
         seq -- sequence of observations (1d array)
         T -- length of sequence
-        return(1) -- loglikelihood
+        return(1) -- likelihood
         return(2) -- alpha: array of forward variables
         """        
         # initialization step:
@@ -88,11 +88,36 @@ class HiddenMarkovModel:
                 # apply log-sum-exp trick
                 log_alpha[t+1,i] = max_log_temp + \
                     np.log(np.sum(np.exp(log_temps-max_log_temp)))
-        # apply exp() since we calculated logarithms
+        # termination: apply exp() since we calculated logarithms
         alpha = np.exp(log_alpha[:,:])
         likelihood = np.sum(alpha[T-1,:])
         return likelihood, alpha
-        
+    
+    def calc_likelihood_scaled(self, seq, T):
+        """ l-hood of sequence being produced by model (scaled)
+         seq -- sequence of observations (1d array)
+        T -- length of sequence
+        return(1) -- loglikelihood
+        return(2) -- sc_alpha: array(T, n) of scaled forward variables
+        return(3) -- c: array(T) of scaling coefficients
+        """
+        sc_alpha = np.empty(shape=(T, self.n))
+        alpha_pr = np.empty(self.n) # from previous step
+        alpha = np.empty(self.n)
+        c = np.empty(T)
+        # initialization
+        alpha_pr[:] = self.pi[:] * self.b[:,seq[0]]
+        c[0] = 1.0 / np.sum(alpha[:])
+        sc_alpha[0, :] = alpha[:] * c[0]
+        # induction
+        for t in range(T-1):
+            alpha[:] = \
+                self.b[:,seq[t+1]] * np.sum(alpha_pr[:]*self.a[:,:], axis=0)
+            c[t+1] = 1.0 / np.sum(alpha[:])
+            sc_alpha[t+1,:] = alpha[:] * c[t+1]
+        # termination:
+        loglikelihood = -np.sum(np.log(c[:]))
+        return loglikelihood, sc_alpha[:,:], c[:]
     
     def generate_sequence(self, T, seed=None):
         """ ... of observations produced by this model
@@ -136,4 +161,4 @@ def generate_discrete_distribution(n):
     """ Generate n values > 0.0, whose sum equals 1.0
     """
     xs = np.array(stats.uniform.rvs(size=n))
-    return xs / (np.sum(xs))
+    return xs / np.sum(xs)
