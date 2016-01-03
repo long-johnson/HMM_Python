@@ -33,11 +33,11 @@ print seq
 print np.histogram(seq, bins=[0,1,2,3], normed=True)
 
 # calculating usual likelihood
-lhood_noscale, alphas_noscale = hmm.calc_likelihood_noscaling(seq, T)
+lhood_noscale, alphas_noscale = hmm.calc_forward_noscaling(seq, T)
 print "Likelihood noscale=" + str(lhood_noscale)
 
 # calculating log-sum-exp likelihood
-lhood_logsumexp, alphas_logsumexp = hmm.calc_likelihood_logsumexp(seq, T)
+lhood_logsumexp, alphas_logsumexp = hmm.calc_forward_logsumexp(seq, T)
 print "Likelihood log-sum-exp=" + str(lhood_logsumexp)
 
 #absolute difference between usual and log-sum-exp likelihood
@@ -70,15 +70,15 @@ print hmm.a
 print hmm.b
 
 print 
-print "No scaling: " + str(hmm.calc_likelihood_noscaling(seq, T)[0])
-print "Log-sum-exp: " + str(hmm.calc_likelihood_logsumexp(seq, T)[0])
-loglikelihood, sc_alpha, c = hmm.calc_likelihood_scaled(seq, T)
+print "No scaling: " + str(hmm.calc_forward_noscaling(seq, T)[0])
+print "Log-sum-exp: " + str(hmm.calc_forward_logsumexp(seq, T)[0])
+loglikelihood, sc_alpha, c = hmm.calc_forward_scaled(seq, T)
 print "Scaled: " + str(np.exp(loglikelihood))
 
 # forward variables
 print
 print "forward variables not scaled"
-print hmm.calc_likelihood_noscaling(seq, T)[1]
+print hmm.calc_forward_noscaling(seq, T)[1]
 check_sc_alpha = np.empty(shape=(T,N))
 for t in range(T):
     check_sc_alpha[t,:] = sc_alpha[t,:] / np.prod(c[:t+1])

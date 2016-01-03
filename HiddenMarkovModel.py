@@ -49,7 +49,7 @@ class HiddenMarkovModel:
             for i in range(n):
                 self.b[i, :] = generate_discrete_distribution(m)
     
-    def calc_likelihood_noscaling(self, seq, T):
+    def calc_forward_noscaling(self, seq, T):
         """ l-hood of sequence being produced by this model (no scaling)
         seq -- sequence of observations (1d array)
         T -- length of sequence
@@ -68,7 +68,7 @@ class HiddenMarkovModel:
         likelihood = np.sum(alpha[T-1,:])
         return likelihood, alpha
     
-    def calc_likelihood_logsumexp(self, seq, T):
+    def calc_forward_logsumexp(self, seq, T):
         # TODO: needs to be thought through more carefully
         """ l-hood of sequence being produced by model (log-sum-exp trick)
         seq -- sequence of observations (1d array)
@@ -95,7 +95,7 @@ class HiddenMarkovModel:
         likelihood = np.sum(alpha[T-1,:])
         return likelihood, alpha
     
-    def calc_likelihood_scaled(self, seq, T):
+    def calc_forward_scaled(self, seq, T):
         """ l-hood of sequence being produced by model (scaled)
         seq -- sequence of observations, array(T)
         T -- length of sequence, int
@@ -197,7 +197,7 @@ class HiddenMarkovModel:
         return seq
         
     #def train(self, )
-        
+
 def generate_discrete_distribution(n):
     """ Generate n values > 0.0, whose sum equals 1.0
     """
