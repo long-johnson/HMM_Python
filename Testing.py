@@ -75,15 +75,24 @@ print "Log-sum-exp: " + str(hmm.calc_likelihood_logsumexp(seq, T)[0])
 loglikelihood, sc_alpha, c = hmm.calc_likelihood_scaled(seq, T)
 print "Scaled: " + str(np.exp(loglikelihood))
 
+# forward variables
+print
+print "forward variables not scaled"
+print hmm.calc_likelihood_noscaling(seq, T)[1]
+check_sc_alpha = np.empty(shape=(T,N))
+for t in range(T):
+    check_sc_alpha[t,:] = sc_alpha[t,:] / np.prod(c[:t+1])
+print "check scaled forward variables"
+print check_sc_alpha
+
 # backaward variables
 print
+print "bacward variables not scaled"
 print hmm.calc_backward_noscaling(seq, T)
 sc_beta = hmm.calc_backward_scaled(seq, T, c)
 #print sc_beta[:,:]
 check_sc_beta = np.empty(shape=(T,N))
-check_c = 1.0
 for t in reversed(range(T)):
-    check_c *= c[t]
-    check_sc_beta[t,:] = sc_beta[t,:] / check_c
-    
+    check_sc_beta[t,:] = sc_beta[t,:] / np.prod(c[t:])
+print "check scaled backward variables"
 print check_sc_beta

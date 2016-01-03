@@ -78,7 +78,7 @@ class HiddenMarkovModel:
         """        
         # initialization step:
         log_alpha = np.empty((T, self.n))
-        log_alpha[0, :] = np.log(self.pi * self.b[:,seq[0]])
+        log_alpha[0, :] = np.log(self.pi[:] * self.b[:,seq[0]])
         # induction step:
         for t in range(T-1):
             # for each state calc forward variable
@@ -110,14 +110,14 @@ class HiddenMarkovModel:
         # initialization
         alpha_pr[:] = self.pi[:] * self.b[:,seq[0]]
         c[0] = 1.0 / np.sum(alpha_pr[:])
-        sc_alpha[0, :] = alpha_pr[:] * c[0]
+        sc_alpha[0,:] = alpha_pr[:] * c[0]
         # induction
         for t in range(T-1):
             for i in range(self.n):
                 alpha[i] = \
-                    c[t] * self.b[i,seq[t+1]] * np.sum(alpha_pr[:]*self.a[:,i])
+                    self.b[i,seq[t+1]] * np.sum(sc_alpha[t,:]*self.a[:,i])
             c[t+1] = 1.0 / np.sum(alpha[:])
-            sc_alpha[t+1,:] = alpha[:] * c[t+1]
+            sc_alpha[t+1,:] = c[t+1] * alpha[:]
             alpha_pr = alpha.copy()
         # termination:
         loglikelihood = -np.sum(np.log(c[:]))
@@ -135,7 +135,7 @@ class HiddenMarkovModel:
         # induction
         for t in reversed(range(T-1)):
             for i in range(self.n):
-                beta[t,i] = sum(self.a[i,:] * self.b[:,seq[t+1]] * beta[t+1,:])
+                beta[t,i] = self.b[i,seq[t+1]] * sum(self.a[i,:] * beta[t+1,:])
         return beta[:,:]
         
     def calc_backward_scaled(self, seq, T, c):
@@ -149,15 +149,13 @@ class HiddenMarkovModel:
         beta_pr = np.empty(self.n) # from previous step
         beta = np.empty(self.n)
         # initialization
-        D = c[T-1]
         beta_pr[:] = 1.0
-        sc_beta[T-1, :] = D * beta_pr[:]
+        sc_beta[-1, :] = c[-1] * beta_pr[:]
         # induction
         for t in reversed(range(T-1)):
             for i in range(self.n):
                 beta[i] = \
-                    D * sum(self.a[i,:] * self.b[:,seq[t+1]] * beta_pr[:])
-            D *= c[t]
+                    self.b[i,seq[t+1]] * sum(self.a[i,:] * sc_beta[t+1,:])
             sc_beta[t, :] = c[t] * beta[:]
             beta_pr = beta.copy()
         return sc_beta
