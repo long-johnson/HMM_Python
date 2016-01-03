@@ -136,6 +136,7 @@ class HiddenMarkovModel:
         for t in reversed(range(T-1)):
             for i in range(self.n):
                 beta[t,i] = self.b[i,seq[t+1]] * sum(self.a[i,:] * beta[t+1,:])
+        # TODO: return also the likelihood        
         return beta[:,:]
         
     def calc_backward_scaled(self, seq, T, c):
@@ -158,6 +159,7 @@ class HiddenMarkovModel:
                     self.b[i,seq[t+1]] * sum(self.a[i,:] * sc_beta[t+1,:])
             sc_beta[t, :] = c[t] * beta[:]
             beta_pr = beta.copy()
+        # TODO: return also the likelihood
         return sc_beta
     
     def generate_sequence(self, T, seed=None):
@@ -197,6 +199,39 @@ class HiddenMarkovModel:
         return seq
         
     #def train(self, )
+        
+def train_hmm_baumwelch_noscaling(seq, hmm0, eps=1e-4, max_iter=100):
+    """ Train a HMM given a training sequence & an initial approximation 
+    seq -- training sequence
+    hmm0 -- initial approximation of hmm parameters
+    eps -- value for termination of iteration process
+    max_iter -- max number of iterations
+    """
+    T = seq.size
+    hmm = hmm0.deepcopy()
+    iteration = 0
+    p_prev = -100.0 # likelihood on previous iteration (dummy value)
+    p = 100.0       # likelihood on cur iteration (dummy value)
+    while not np.isclose(p_prev,p,atol=eps) and iteration < max_iter:
+        p_prev = p
+        p, alpha = hmm.calc_forward_noscaling(seq, T)
+        beta = hmm.calc_bacward_noscaling(seq, T)
+        xi = hmm.calc_xi_noscaling(seq, T, alpha, beta) # TODO:
+        gamma = hmm.calc_gamma_noscaling(T, xi)         # TODO:
+        # re-estimation
+        hmm.pi = gamma[0,:]
+        for i in range(hmm.n):
+            for j in range(hmm.n):
+                hmm.a[i,j] = np.sum(xi[:,i,j]) / np.sum(gamma[:,i]) 
+        for i in range(hmm.n):
+            for m in range(hmm.m):
+                gamma_sum = 0
+                for t in range(T):
+                    if seq[t] == m:
+                        gamma_sum += gamma[t,i]
+                hmm.b[i,m] = gamma_sum / np.sum(gamma[:,i])
+        iteration += 1
+    return hmm
 
 def generate_discrete_distribution(n):
     """ Generate n values > 0.0, whose sum equals 1.0
