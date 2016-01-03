@@ -97,8 +97,8 @@ class HiddenMarkovModel:
     
     def calc_likelihood_scaled(self, seq, T):
         """ l-hood of sequence being produced by model (scaled)
-         seq -- sequence of observations (1d array)
-        T -- length of sequence
+        seq -- sequence of observations, array(T)
+        T -- length of sequence, int
         return(1) -- loglikelihood
         return(2) -- sc_alpha: array(T, n) of scaled forward variables
         return(3) -- c: array(T) of scaling coefficients
@@ -122,6 +122,45 @@ class HiddenMarkovModel:
         # termination:
         loglikelihood = -np.sum(np.log(c[:]))
         return loglikelihood, sc_alpha[:,:], c[:]
+    
+    def calc_backward_noscaling(self, seq, T):
+        """ Calc backward variables given the model and sequence
+        seq -- sequence of observations, array(T)
+        T -- length of sequence, int
+        return -- beta: array(T, n) of backward variables
+        """
+        beta = np.empty(shape=(T, self.n))
+        # initialization
+        beta[T-1, :] = 1.0
+        # induction
+        for t in reversed(range(T-1)):
+            for i in range(self.n):
+                beta[t,i] = sum(self.a[i,:] * self.b[:,seq[t+1]] * beta[t+1,:])
+        return beta[:,:]
+        
+    def calc_backward_scaled(self, seq, T, c):
+        """ Calc backward variables using standard scaling procedure
+        seq -- sequence of observations, array(T)
+        T -- length of sequence, int
+        c -- array(T) of scaling coefficients
+        return -- sc_beta: array(T, n) of scaled backward variables
+        """
+        sc_beta = np.empty(shape=(T, self.n))
+        beta_pr = np.empty(self.n) # from previous step
+        beta = np.empty(self.n)
+        # initialization
+        D = c[T-1]
+        beta_pr[:] = 1.0
+        sc_beta[T-1, :] = D * beta_pr[:]
+        # induction
+        for t in reversed(range(T-1)):
+            for i in range(self.n):
+                beta[i] = \
+                    D * sum(self.a[i,:] * self.b[:,seq[t+1]] * beta_pr[:])
+            D *= c[t]
+            sc_beta[t, :] = c[t] * beta[:]
+            beta_pr = beta.copy()
+        return sc_beta
     
     def generate_sequence(self, T, seed=None):
         """ ... of observations produced by this model

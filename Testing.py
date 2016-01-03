@@ -10,7 +10,7 @@ from HiddenMarkovModel import HiddenMarkovModel
 from HiddenMarkovModel import generate_discrete_distribution
 
 # generating
-T = 100
+T = 5
 N = 2
 M = 2
 """Pi = np.array([0.4, 0.6])
@@ -72,4 +72,18 @@ print hmm.b
 print 
 print "No scaling: " + str(hmm.calc_likelihood_noscaling(seq, T)[0])
 print "Log-sum-exp: " + str(hmm.calc_likelihood_logsumexp(seq, T)[0])
-print "Scaled: " + str(np.exp(hmm.calc_likelihood_scaled(seq, T)[0]))
+loglikelihood, sc_alpha, c = hmm.calc_likelihood_scaled(seq, T)
+print "Scaled: " + str(np.exp(loglikelihood))
+
+# backaward variables
+print
+print hmm.calc_backward_noscaling(seq, T)
+sc_beta = hmm.calc_backward_scaled(seq, T, c)
+#print sc_beta[:,:]
+check_sc_beta = np.empty(shape=(T,N))
+check_c = 1.0
+for t in reversed(range(T)):
+    check_c *= c[t]
+    check_sc_beta[t,:] = sc_beta[t,:] / check_c
+    
+print check_sc_beta
