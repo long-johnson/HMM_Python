@@ -2,6 +2,7 @@
 
 import numpy as np
 from scipy import stats
+import copy
 
 class HiddenMarkovModel:
     
@@ -173,7 +174,7 @@ class HiddenMarkovModel:
         return - xi, array(T,N,N)
         """
         T = seq.size
-        xi = np.empty(shape=(T-1, self.N, self.N))
+        xi = np.empty(shape=(T-1, self.n, self.n))
         for t in range(T-1):
             for i in range(self.n):
                 xi[t,i,:] = \
@@ -181,7 +182,7 @@ class HiddenMarkovModel:
         xi[:,:,:] /= p
         return xi
     
-    def calc_gamma_noscaling(self, T, alpha=None, beta=None, p=None, xi=None):
+    def calc_gamma_noscaling(self, T, alpha, beta, p, xi=None):
         """ Calc gamma(t,i), t=1..T, i=1..N -- array of probabilities of
         being in state i at the time t given the model and sequence
         T -- length of sequence
@@ -194,7 +195,8 @@ class HiddenMarkovModel:
         """
         gamma = np.empty(shape=(T,self.n))
         if xi is not None:
-            gamma[:,:] = np.sum(xi[:,:,:], axis=2)
+            gamma[:-1,:] = np.sum(xi[:,:,:], axis=2)
+            gamma[-1,:] = alpha[-1,:] * beta[-1,:] / p
         else:
             gamma[:,:] = alpha[:,:] * beta[:,:] / p
         return gamma[:,:]
@@ -245,21 +247,21 @@ def train_hmm_baumwelch_noscaling(seq, hmm0, eps=1e-4, max_iter=100):
     max_iter -- max number of iterations
     """
     T = seq.size
-    hmm = hmm0.deepcopy()
+    hmm = copy.deepcopy(hmm0)
     iteration = 0
     p_prev = -100.0 # likelihood on previous iteration (dummy value)
     p = 100.0       # likelihood on cur iteration (dummy value)
     while not np.isclose(p_prev,p,atol=eps) and iteration < max_iter:
         p_prev = p
         p, alpha = hmm.calc_forward_noscaling(seq, T)
-        beta = hmm.calc_bacward_noscaling(seq, T)
+        beta = hmm.calc_backward_noscaling(seq, T)
         xi = hmm.calc_xi_noscaling(seq, alpha, beta, p)
-        gamma = hmm.calc_gamma_noscaling(T, xi=xi)
+        gamma = hmm.calc_gamma_noscaling(T, alpha, beta, p, xi)
         # re-estimation
-        hmm.pi = gamma[0,:]
+        hmm.pi[:] = gamma[0,:]
         for i in range(hmm.n):
             for j in range(hmm.n):
-                hmm.a[i,j] = np.sum(xi[:,i,j]) / np.sum(gamma[:,i]) 
+                hmm.a[i,j] = np.sum(xi[:,i,j]) / np.sum(gamma[:-1,i]) 
         for i in range(hmm.n):
             for m in range(hmm.m):
                 gamma_sum = 0
@@ -268,6 +270,7 @@ def train_hmm_baumwelch_noscaling(seq, hmm0, eps=1e-4, max_iter=100):
                         gamma_sum += gamma[t,i]
                 hmm.b[i,m] = gamma_sum / np.sum(gamma[:,i])
         iteration += 1
+    print "train_hmm_baumwelch_noscaling: iteration = " + str(iteration)
     return hmm
 
 def generate_discrete_distribution(n):

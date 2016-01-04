@@ -8,11 +8,12 @@ import numpy as np
 
 from HiddenMarkovModel import HiddenMarkovModel
 from HiddenMarkovModel import generate_discrete_distribution
+from HiddenMarkovModel import train_hmm_baumwelch_noscaling
 
 # generating
-T = 5
-N = 2
-M = 2
+T = 20
+N = 3
+M = 3
 """Pi = np.array([0.4, 0.6])
 A = np.array([
     [0.2, 0.8],
@@ -26,9 +27,9 @@ hmm = HiddenMarkovModel(N,M,pi=Pi,a=A,b=B)"""
 
 #hmm = HiddenMarkovModel(N, M)
 
-hmm = HiddenMarkovModel(N, M, seed=563)
+hmm = HiddenMarkovModel(N, M, seed=562)
 
-seq = hmm.generate_sequence(T, seed=563)
+seq = hmm.generate_sequence(T, seed=564)
 print seq
 print np.histogram(seq, bins=[0,1,2,3], normed=True)
 
@@ -96,3 +97,36 @@ for t in reversed(range(T)):
     check_sc_beta[t,:] = sc_beta[t,:] / np.prod(c[t:])
 print "check scaled backward variables"
 print check_sc_beta
+
+""" training noscaling
+"""
+# standard initial approximation
+hmm0 = HiddenMarkovModel(N, M, seed=3)
+hmm_trained = train_hmm_baumwelch_noscaling(seq, hmm0)
+
+print "\nHMM generated params:"
+print hmm.pi
+print hmm.a
+print hmm.b
+
+print "trained model:"
+print hmm_trained.pi
+print hmm_trained.a
+print hmm_trained.b
+print
+print "compare likelihoods:"
+print hmm_trained.calc_forward_noscaling(seq, seq.size)[0]
+print hmm.calc_forward_noscaling(seq, seq.size)[0]
+
+# classification check
+print
+print "classification check"
+T=50
+hmm1 = HiddenMarkovModel(n=3,m=3,seed=10)
+hmm2 = HiddenMarkovModel(n=3,m=3,seed=20)
+seq1 = hmm1.generate_sequence(T, seed=10)
+seq2 = hmm2.generate_sequence(T, seed=20)
+print "1m-1s: " + str(hmm1.calc_forward_noscaling(seq1,T)[0])
+print "1m-2s: " + str(hmm1.calc_forward_noscaling(seq2,T)[0])
+print "2m-1s: " + str(hmm2.calc_forward_noscaling(seq1,T)[0])
+print "2m-2s: " + str(hmm2.calc_forward_noscaling(seq2,T)[0])
