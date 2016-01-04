@@ -50,10 +50,10 @@ class HiddenMarkovModel:
                 self.b[i, :] = generate_discrete_distribution(m)
     
     def calc_forward_noscaling(self, seq, T):
-        """ l-hood of sequence being produced by this model (no scaling)
+        """ calculate forward variables (no scaling)
         seq -- sequence of observations (1d array)
         T -- length of sequence
-        return(1) -- likelihood
+        return(1) -- likelihood of sequence being produced by model
         return(2) -- alpha: array of forward variables
         """        
         # initialization step:
@@ -70,10 +70,10 @@ class HiddenMarkovModel:
     
     def calc_forward_logsumexp(self, seq, T):
         # TODO: needs to be thought through more carefully
-        """ l-hood of sequence being produced by model (log-sum-exp trick)
+        """ calculate forward variables (log-sum-exp trick)
         seq -- sequence of observations (1d array)
         T -- length of sequence
-        return(1) -- likelihood
+        return(1) -- likelihood of sequence being produced by model
         return(2) -- alpha: array of forward variables
         """        
         # initialization step:
@@ -96,10 +96,10 @@ class HiddenMarkovModel:
         return likelihood, alpha
     
     def calc_forward_scaled(self, seq, T):
-        """ l-hood of sequence being produced by model (scaled)
+        """ calculate forward variables (scaled)
         seq -- sequence of observations, array(T)
         T -- length of sequence, int
-        return(1) -- loglikelihood
+        return(1) -- loglikelihood of sequence being produced by model
         return(2) -- sc_alpha: array(T, n) of scaled forward variables
         return(3) -- c: array(T) of scaling coefficients
         """
@@ -135,7 +135,8 @@ class HiddenMarkovModel:
         # induction
         for t in reversed(range(T-1)):
             for i in range(self.n):
-                beta[t,i] = self.b[i,seq[t+1]] * sum(self.a[i,:] * beta[t+1,:])
+                beta[t,i] = \
+                    self.b[i,seq[t+1]] * np.sum(self.a[i,:] * beta[t+1,:])
         # TODO: return also the likelihood        
         return beta[:,:]
         
@@ -156,15 +157,15 @@ class HiddenMarkovModel:
         for t in reversed(range(T-1)):
             for i in range(self.n):
                 beta[i] = \
-                    self.b[i,seq[t+1]] * sum(self.a[i,:] * sc_beta[t+1,:])
+                    self.b[i,seq[t+1]] * np.sum(self.a[i,:] * sc_beta[t+1,:])
             sc_beta[t, :] = c[t] * beta[:]
             beta_pr = beta.copy()
         # TODO: return also the likelihood
         return sc_beta
     
     def calc_xi_noscaling(self, seq, alpha, beta, p):
-        """ Calc xi(t,i,j) - array of probabilities of being in
-        state i and go to state j in time t, t=1..T, i,j=1..N
+        """ Calc xi(t,i,j), t=1..T, i,j=1..N - array of probabilities of
+        being in state i and go to state j in time t given the model and seq
         seq -- sequence of observations, array(T)
         alpha -- forward variables, array(T,i)
         beta -- backward variables, array(T,i)
@@ -179,6 +180,24 @@ class HiddenMarkovModel:
                     alpha[t,i] * self.a[i,:] * self.b[:,seq[t+1]] * beta[t+1,:]
         xi[:,:,:] /= p
         return xi
+    
+    def calc_gamma_noscaling(self, T, alpha=None, beta=None, p=None, xi=None):
+        """ Calc gamma(t,i), t=1..T, i=1..N -- array of probabilities of
+        being in state i at the time t given the model and sequence
+        T -- length of sequence
+        mode 1:
+        alpha -- forward variables
+        beta -- backward variables
+        p -- likelihood of sequence being produced by this model
+        mode 2:
+        xi -- array of xi values (refer to calc_xi_noscaling)
+        """
+        gamma = np.empty(shape=(T,self.n))
+        if xi is not None:
+            gamma[:,:] = np.sum(xi[:,:,:], axis=2)
+        else:
+            gamma[:,:] = alpha[:,:] * beta[:,:] / p
+        return gamma[:,:]
     
     def generate_sequence(self, T, seed=None):
         """ ... of observations produced by this model
@@ -234,8 +253,8 @@ def train_hmm_baumwelch_noscaling(seq, hmm0, eps=1e-4, max_iter=100):
         p_prev = p
         p, alpha = hmm.calc_forward_noscaling(seq, T)
         beta = hmm.calc_bacward_noscaling(seq, T)
-        xi = hmm.calc_xi_noscaling(seq, T, alpha, beta) # TODO:
-        gamma = hmm.calc_gamma_noscaling(T, xi)         # TODO:
+        xi = hmm.calc_xi_noscaling(seq, alpha, beta, p)
+        gamma = hmm.calc_gamma_noscaling(T, xi=xi)
         # re-estimation
         hmm.pi = gamma[0,:]
         for i in range(hmm.n):
