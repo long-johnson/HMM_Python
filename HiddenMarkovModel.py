@@ -162,6 +162,24 @@ class HiddenMarkovModel:
         # TODO: return also the likelihood
         return sc_beta
     
+    def calc_xi_noscaling(self, seq, alpha, beta, p):
+        """ Calc xi(t,i,j) - array of probabilities of being in
+        state i and go to state j in time t, t=1..T, i,j=1..N
+        seq -- sequence of observations, array(T)
+        alpha -- forward variables, array(T,i)
+        beta -- backward variables, array(T,i)
+        p -- likelihood of seq being produced by this model
+        return - xi, array(T,N,N)
+        """
+        T = seq.size
+        xi = np.empty(shape=(T-1, self.N, self.N))
+        for t in range(T-1):
+            for i in range(self.n):
+                xi[t,i,:] = \
+                    alpha[t,i] * self.a[i,:] * self.b[:,seq[t+1]] * beta[t+1,:]
+        xi[:,:,:] /= p
+        return xi
+    
     def generate_sequence(self, T, seed=None):
         """ ... of observations produced by this model
         T -- length of sequence
