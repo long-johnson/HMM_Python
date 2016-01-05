@@ -9,7 +9,7 @@ import numpy as np
 from HiddenMarkovModel import HiddenMarkovModel
 from HiddenMarkovModel import generate_discrete_distribution
 from HiddenMarkovModel import train_hmm_baumwelch_noscaling
-
+from HiddenMarkovModel import choose_best_hmm_using_bauwelch
 # generating
 T = 50
 N = 2
@@ -137,3 +137,24 @@ print "1m-1s: " + str(hmm1.calc_forward_noscaling(seq1)[0])
 print "1m-2s: " + str(hmm1.calc_forward_noscaling(seq2)[0])
 print "2m-1s: " + str(hmm2.calc_forward_noscaling(seq1)[0])
 print "2m-2s: " + str(hmm2.calc_forward_noscaling(seq2)[0])
+
+
+hmm_trained = \
+    choose_best_hmm_using_bauwelch(seq, train_hmm_baumwelch_noscaling, 
+                                   10, 2, 2, rtol=0.05, max_iter=50
+                                   )
+
+print "\nHMM generated params:"
+print hmm.pi
+print hmm.a
+print hmm.b
+
+print "trained model:"
+print hmm_trained.pi
+print hmm_trained.a
+print hmm_trained.b
+print
+print "compare likelihoods:"
+print "trained: " + str(hmm_trained.calc_forward_noscaling(seq)[0])
+print "true: " + str(hmm.calc_forward_noscaling(seq)[0])
+print hmm.calc_forward_noscaling(seq)[0] > hmm_trained.calc_forward_noscaling(seq)[0]

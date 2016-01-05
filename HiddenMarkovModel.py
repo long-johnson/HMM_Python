@@ -240,7 +240,7 @@ class HiddenMarkovModel:
         
     #def train(self, )
         
-def train_hmm_baumwelch_noscaling(seq, hmm0, rtol=0.1, max_iter=100):
+def train_hmm_baumwelch_noscaling(seq, hmm0, rtol=0.1, max_iter=10):
     """ Train a HMM given a training sequence & an initial approximation 
     seq -- training sequence
     hmm0 -- initial approximation of hmm parameters
@@ -250,11 +250,12 @@ def train_hmm_baumwelch_noscaling(seq, hmm0, rtol=0.1, max_iter=100):
     T = seq.size
     hmm = copy.deepcopy(hmm0)
     iteration = 0
+    # TODO: maybe p_prev calc here and change E and M step in iteration?
     p_prev = -100.0 # likelihood on previous iteration (dummy value)
     p = 100.0       # likelihood on cur iteration (dummy value)
     #while not np.isclose(p_prev,p,atol=eps) and iteration < max_iter:
     while np.abs(p_prev-p)/p > rtol and iteration < max_iter:
-        print np.abs(p_prev-p)/p
+        #print np.abs(p_prev-p)/p
         p_prev = p
         p, alpha = hmm.calc_forward_noscaling(seq)
         beta = hmm.calc_backward_noscaling(seq, T)
@@ -275,6 +276,35 @@ def train_hmm_baumwelch_noscaling(seq, hmm0, rtol=0.1, max_iter=100):
         iteration += 1
     print "train_hmm_baumwelch_noscaling: iteration = " + str(iteration)
     return hmm
+    
+def choose_best_hmm_using_bauwelch(seq, train_func, hmms0_size, n, m,
+                                   hmms0=None, rtol=0.1, max_iter=10):
+    """ Train several hmms using baumwelch algorithm and choose the best one
+    seq -- training sequence
+    train_func -- Baum-Welch algorithm training function
+    hmms0_size -- number of initial approximations
+    n -- number of HMM states
+    m -- number of HMM symbols
+    mode1: hmms0 -- array of initial approximations
+    mode2: hmms0 -- None -- will be generated randomly
+    rtol -- relative tolerance (stopping criterion)
+    max_iter -- (stopping criterion)
+    """
+    # generate approximations if not given any
+    if hmms0 is None:
+        hmms0 = []
+        rands = np.random.randint(1, high=3000, size=hmms0_size) # seeds
+        for i in range(hmms0_size):
+            hmms0.append(HiddenMarkovModel(n, m, seed=rands[i]))
+    # calc and choose the best hmm estimate
+    p_max = np.finfo(np.float64).min
+    for hmm0 in hmms0:
+        hmm = train_func(seq, hmm0, rtol, max_iter)
+        p, _ = hmm.calc_forward_noscaling(seq)
+        if (p_max < p):
+            hmm_best = copy.deepcopy(hmm)
+            p_max = p
+    return hmm_best
 
 def generate_discrete_distribution(n):
     """ Generate n values > 0.0, whose sum equals 1.0
