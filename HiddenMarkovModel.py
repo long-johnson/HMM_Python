@@ -50,24 +50,25 @@ class HiddenMarkovModel:
             for i in range(n):
                 self.b[i, :] = generate_discrete_distribution(m)
     
-    def calc_forward_noscaling(self, seq, T):
+    def calc_forward_noscaling(self, seq):
         """ calculate forward variables (no scaling)
         seq -- sequence of observations (1d array)
         T -- length of sequence
         return(1) -- likelihood of sequence being produced by model
         return(2) -- alpha: array of forward variables
         """        
+        T = seq.size
         # initialization step:
         alpha = np.empty((T, self.n))
-        alpha[0,:] = self.pi * self.b[:,seq[0]]
+        alpha[0,:] = self.pi[:] * self.b[:,seq[0]]
         # induction step:
         for t in range(T-1):
             for i in range(self.n):
                 alpha[t+1,i] = \
                     self.b[i,seq[t+1]] * np.sum(alpha[t,:]*self.a[:,i])
         # termination:
-        likelihood = np.sum(alpha[T-1,:])
-        return likelihood, alpha
+        likelihood = np.sum(alpha[-1,:])
+        return likelihood, alpha[:,:]
     
     def calc_forward_logsumexp(self, seq, T):
         # TODO: needs to be thought through more carefully
@@ -132,12 +133,12 @@ class HiddenMarkovModel:
         """
         beta = np.empty(shape=(T, self.n))
         # initialization
-        beta[T-1, :] = 1.0
+        beta[-1, :] = 1.0
         # induction
         for t in reversed(range(T-1)):
             for i in range(self.n):
                 beta[t,i] = \
-                    self.b[i,seq[t+1]] * np.sum(self.a[i,:] * beta[t+1,:])
+                    np.sum(self.a[i,:] * self.b[:,seq[t+1]] * beta[t+1,:])
         # TODO: return also the likelihood        
         return beta[:,:]
         
@@ -158,7 +159,7 @@ class HiddenMarkovModel:
         for t in reversed(range(T-1)):
             for i in range(self.n):
                 beta[i] = \
-                    self.b[i,seq[t+1]] * np.sum(self.a[i,:] * sc_beta[t+1,:])
+                    np.sum(self.a[i,:] * self.b[:,seq[t+1]]  * sc_beta[t+1,:])
             sc_beta[t, :] = c[t] * beta[:]
             beta_pr = beta.copy()
         # TODO: return also the likelihood
@@ -195,11 +196,11 @@ class HiddenMarkovModel:
         """
         gamma = np.empty(shape=(T,self.n))
         if xi is not None:
-            gamma[:-1,:] = np.sum(xi[:,:,:], axis=2)
-            gamma[-1,:] = alpha[-1,:] * beta[-1,:] / p
+            gamma[:-1, :] = np.sum(xi[:,:,:], axis=2)
+            gamma[-1, :] = alpha[-1, :] * beta[-1, :] / p
         else:
-            gamma[:,:] = alpha[:,:] * beta[:,:] / p
-        return gamma[:,:]
+            gamma[:, :] = alpha[:, :] * beta[:, :] / p
+        return gamma[:, :]
     
     def generate_sequence(self, T, seed=None):
         """ ... of observations produced by this model
@@ -239,11 +240,11 @@ class HiddenMarkovModel:
         
     #def train(self, )
         
-def train_hmm_baumwelch_noscaling(seq, hmm0, eps=1e-4, max_iter=100):
+def train_hmm_baumwelch_noscaling(seq, hmm0, rtol=0.1, max_iter=100):
     """ Train a HMM given a training sequence & an initial approximation 
     seq -- training sequence
     hmm0 -- initial approximation of hmm parameters
-    eps -- value for termination of iteration process
+    rtol -- relative tolerance for termination of iteration process
     max_iter -- max number of iterations
     """
     T = seq.size
@@ -251,12 +252,14 @@ def train_hmm_baumwelch_noscaling(seq, hmm0, eps=1e-4, max_iter=100):
     iteration = 0
     p_prev = -100.0 # likelihood on previous iteration (dummy value)
     p = 100.0       # likelihood on cur iteration (dummy value)
-    while not np.isclose(p_prev,p,atol=eps) and iteration < max_iter:
+    #while not np.isclose(p_prev,p,atol=eps) and iteration < max_iter:
+    while np.abs(p_prev-p)/p > rtol and iteration < max_iter:
+        print np.abs(p_prev-p)/p
         p_prev = p
-        p, alpha = hmm.calc_forward_noscaling(seq, T)
+        p, alpha = hmm.calc_forward_noscaling(seq)
         beta = hmm.calc_backward_noscaling(seq, T)
         xi = hmm.calc_xi_noscaling(seq, alpha, beta, p)
-        gamma = hmm.calc_gamma_noscaling(T, alpha, beta, p, xi)
+        gamma = hmm.calc_gamma_noscaling(T, alpha, beta, p)
         # re-estimation
         hmm.pi[:] = gamma[0,:]
         for i in range(hmm.n):
