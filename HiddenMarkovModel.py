@@ -50,10 +50,64 @@ class HiddenMarkovModel:
             for i in range(n):
                 self.b[i, :] = generate_discrete_distribution(m)
     
+    def generate_sequence(self, T, seed=None):
+        """
+        Generate sequence of observations produced by this model
+        
+        Parameters
+        ----------
+        T : int
+            Length of sequence
+        seed : int, optional
+            Seed for random generator
+            
+        Returns
+        -------
+        return : ndarray
+            Generated sequence
+        """
+        # preparation
+        # randomize with accordance to seed
+        np.random.seed(seed)
+        # prepare array for sequence
+        seq = np.empty(T, dtype=int)
+        
+        # discrete distrubution of initial states
+        pi_distr = \
+            stats.rv_discrete(values = (np.arange(self.n), self.pi))
+        # set discrete distribution of transtition probabilities for each state
+        a_distr_list = []
+        for i in range(self.n):
+            temp = stats.rv_discrete(values=(np.arange(self.n),(self.a[i,:])))
+            a_distr_list.append(temp)
+        # set discrete distribution of symbols for each state
+        b_distr_list = []
+        for i in range(self.n):
+            temp = stats.rv_discrete(values=(np.arange(self.m),(self.b[i,:])))
+            b_distr_list.append(temp)
+        # generation
+        # generate number of initial state
+        state = pi_distr.rvs()
+        # generate observation from the state
+        seq[0] = b_distr_list[state].rvs()
+        for t in range(1, T):
+            # transit to a new state
+            state = a_distr_list[state].rvs()
+            # generate observation from the state
+            seq[t] = b_distr_list[state].rvs()
+        
+        """
+        state = _get_sample_discrete_distr(self.pi)
+        seq[0] = _get_sample_discrete_distr(self.b[state,:])
+        for t in range(1, T):
+            state = _get_sample_discrete_distr(self.a[state,:])
+            seq[t] = _get_sample_discrete_distr(self.b[state,:])
+            """
+        return seq
+    
     def calc_forward_noscaling(self, seq):
         """ calculate forward variables (no scaling)
         seq -- sequence of observations (1d array)
-        T -- length of sequence
         return(1) -- likelihood of sequence being produced by model
         return(2) -- alpha: array of forward variables
         """        
@@ -70,14 +124,14 @@ class HiddenMarkovModel:
         likelihood = np.sum(alpha[-1,:])
         return likelihood, alpha[:,:]
     
-    def calc_forward_logsumexp(self, seq, T):
+    def calc_forward_logsumexp(self, seq):
         # TODO: needs to be thought through more carefully
         """ calculate forward variables (log-sum-exp trick)
         seq -- sequence of observations (1d array)
-        T -- length of sequence
         return(1) -- likelihood of sequence being produced by model
         return(2) -- alpha: array of forward variables
         """        
+        T = seq.size
         # initialization step:
         log_alpha = np.empty((T, self.n))
         log_alpha[0, :] = np.log(self.pi[:] * self.b[:,seq[0]])
@@ -97,14 +151,14 @@ class HiddenMarkovModel:
         likelihood = np.sum(alpha[T-1,:])
         return likelihood, alpha
     
-    def calc_forward_scaled(self, seq, T):
+    def calc_forward_scaled(self, seq):
         """ calculate forward variables (scaled)
         seq -- sequence of observations, array(T)
-        T -- length of sequence, int
         return(1) -- loglikelihood of sequence being produced by model
         return(2) -- sc_alpha: array(T, n) of scaled forward variables
         return(3) -- c: array(T) of scaling coefficients
         """
+        T = seq.size
         sc_alpha = np.empty(shape=(T, self.n))
         alpha_pr = np.empty(self.n) # from previous step
         alpha = np.empty(self.n)
@@ -125,12 +179,12 @@ class HiddenMarkovModel:
         loglikelihood = -np.sum(np.log(c[:]))
         return loglikelihood, sc_alpha[:,:], c[:]
     
-    def calc_backward_noscaling(self, seq, T):
+    def calc_backward_noscaling(self, seq):
         """ Calc backward variables given the model and sequence
         seq -- sequence of observations, array(T)
-        T -- length of sequence, int
         return -- beta: array(T, n) of backward variables
         """
+        T = seq.size
         beta = np.empty(shape=(T, self.n))
         # initialization
         beta[-1, :] = 1.0
@@ -139,16 +193,17 @@ class HiddenMarkovModel:
             for i in range(self.n):
                 beta[t,i] = \
                     np.sum(self.a[i,:] * self.b[:,seq[t+1]] * beta[t+1,:])
-        # TODO: return also the likelihood        
+        # TODO: return also the likelihood  
+        #print "beta" + str(np.sum(beta[0,:]*self.b[:,seq[0]]))
         return beta[:,:]
         
-    def calc_backward_scaled(self, seq, T, c):
+    def calc_backward_scaled(self, seq, c):
         """ Calc backward variables using standard scaling procedure
         seq -- sequence of observations, array(T)
-        T -- length of sequence, int
         c -- array(T) of scaling coefficients
         return -- sc_beta: array(T, n) of scaled backward variables
         """
+        T = seq.size
         sc_beta = np.empty(shape=(T, self.n))
         beta_pr = np.empty(self.n) # from previous step
         beta = np.empty(self.n)
@@ -183,10 +238,9 @@ class HiddenMarkovModel:
         xi[:,:,:] /= p
         return xi
     
-    def calc_gamma_noscaling(self, T, alpha, beta, p, xi=None):
+    def calc_gamma_noscaling(self, alpha, beta, p, xi=None):
         """ Calc gamma(t,i), t=1..T, i=1..N -- array of probabilities of
         being in state i at the time t given the model and sequence
-        T -- length of sequence
         mode 1:
         alpha -- forward variables
         beta -- backward variables
@@ -194,6 +248,7 @@ class HiddenMarkovModel:
         mode 2:
         xi -- array of xi values (refer to calc_xi_noscaling)
         """
+        T = alpha.shape[0]
         gamma = np.empty(shape=(T,self.n))
         if xi is not None:
             gamma[:-1, :] = np.sum(xi[:,:,:], axis=2)
@@ -201,44 +256,6 @@ class HiddenMarkovModel:
         else:
             gamma[:, :] = alpha[:, :] * beta[:, :] / p
         return gamma[:, :]
-    
-    def generate_sequence(self, T, seed=None):
-        """ ... of observations produced by this model
-        T -- length of sequence
-        seed -- seed for random generator
-        return -- generated sequence
-        """
-        # preparation
-        # randomize with accordance to seed
-        np.random.seed(seed)
-        # prepare array for sequence
-        seq = np.empty(T, dtype=int)
-        # discrete distrubution of initial states
-        pi_distr = \
-            stats.rv_discrete(values = (np.arange(self.n), self.pi))
-        # set dicrete distribution of transtition probabilities for each state
-        a_distr_list = []
-        for i in range(self.n):
-            temp = stats.rv_discrete(values=(np.arange(self.n),(self.a[i,:])))
-            a_distr_list.append(temp)
-        # set dicrete distribution of symbols for each state
-        b_distr_list = []
-        for i in range(self.n):
-            temp = stats.rv_discrete(values=(np.arange(self.m),(self.b[i,:])))
-            b_distr_list.append(temp)
-        # generation
-        # generate number of initial state
-        state = pi_distr.rvs()
-        # generate observation from the state
-        seq[0] = b_distr_list[state].rvs()
-        for t in range(1, T):
-            # transit to a new state
-            state = a_distr_list[state].rvs()
-            # generate observation from the state
-            seq[t] = b_distr_list[state].rvs()
-        return seq
-        
-    #def train(self, )
         
 def train_hmm_baumwelch_noscaling(seq, hmm0, rtol=0.1, max_iter=10):
     """ Train a HMM given a training sequence & an initial approximation 
@@ -258,9 +275,9 @@ def train_hmm_baumwelch_noscaling(seq, hmm0, rtol=0.1, max_iter=10):
         #print np.abs(p_prev-p)/p
         p_prev = p
         p, alpha = hmm.calc_forward_noscaling(seq)
-        beta = hmm.calc_backward_noscaling(seq, T)
+        beta = hmm.calc_backward_noscaling(seq)
         xi = hmm.calc_xi_noscaling(seq, alpha, beta, p)
-        gamma = hmm.calc_gamma_noscaling(T, alpha, beta, p)
+        gamma = hmm.calc_gamma_noscaling(alpha, beta, p, xi)
         # re-estimation
         hmm.pi[:] = gamma[0,:]
         for i in range(hmm.n):
@@ -268,13 +285,13 @@ def train_hmm_baumwelch_noscaling(seq, hmm0, rtol=0.1, max_iter=10):
                 hmm.a[i,j] = np.sum(xi[:,i,j]) / np.sum(gamma[:-1,i]) 
         for i in range(hmm.n):
             for m in range(hmm.m):
-                gamma_sum = 0
+                gamma_sum = 0.0
                 for t in range(T):
                     if seq[t] == m:
                         gamma_sum += gamma[t,i]
                 hmm.b[i,m] = gamma_sum / np.sum(gamma[:,i])
         iteration += 1
-    print "train_hmm_baumwelch_noscaling: iteration = " + str(iteration)
+    #print "train_hmm_baumwelch_noscaling: iteration = " + str(iteration)
     return hmm
     
 def choose_best_hmm_using_bauwelch(seq, train_func, hmms0_size, n, m,
@@ -304,6 +321,10 @@ def choose_best_hmm_using_bauwelch(seq, train_func, hmms0_size, n, m,
         if (p_max < p):
             hmm_best = copy.deepcopy(hmm)
             p_max = p
+        #print "another approximation: p=" + str(p)
+        #print hmm.pi
+        #print hmm.a
+        #print hmm.b
     return hmm_best
 
 def generate_discrete_distribution(n):
@@ -311,3 +332,15 @@ def generate_discrete_distribution(n):
     """
     xs = np.array(stats.uniform.rvs(size=n))
     return xs / np.sum(xs)
+    
+def _get_sample_discrete_distr(distr):
+    """ Get sample of random value that has discrete distrubution 'distr'
+        random values are 0, 1, ...
+    """
+    val = np.random.uniform()
+    cum = 0.0
+    for i in range(len(distr)):
+        cum += distr[i]
+        if val < cum:
+            return i
+    return distr.size-1

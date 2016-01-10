@@ -5,31 +5,45 @@
 """
 
 import numpy as np
+from scipy import stats
+import copy
 
 from HiddenMarkovModel import HiddenMarkovModel
 from HiddenMarkovModel import generate_discrete_distribution
 from HiddenMarkovModel import train_hmm_baumwelch_noscaling
 from HiddenMarkovModel import choose_best_hmm_using_bauwelch
 # generating
-T = 50
+T = 1000
 N = 2
 M = 2
-"""Pi = np.array([0.4, 0.6])
+Pi = np.array([0.3, 0.7])
 A = np.array([
-    [0.2, 0.8],
-    [0.8, 0.2]
+    [0.6, 0.4],
+    [0.3, 0.7]
     ])
 B = np.array([
-    [0.4, 0.6],
-    [0.7, 0.3]
+    [1.0, 0.0],
+    [0.0, 1.0]
     ])
-hmm = HiddenMarkovModel(N,M,pi=Pi,a=A,b=B)"""
+hmm = HiddenMarkovModel(N,M,pi=Pi,a=A,b=B)
 
 #hmm = HiddenMarkovModel(N, M)
 
-hmm = HiddenMarkovModel(N, M, seed=563)
+#hmm = HiddenMarkovModel(N, M, seed=563)
+"""hmm = HiddenMarkovModel(N, M, pi=np.array([1.0,0.0]),
+                            a=np.array(
+                            [[0.5,0.5],
+                             [0.5,0.5]]
+                            ),
+                            b=np.array(
+                            [[1.0,0.0],
+                             [0.0,1.0]]
+                            )
+                        )"""
 
 seq = hmm.generate_sequence(T, seed=564)
+
+"""
 print seq
 print np.histogram(seq, bins=[0,1,2,3], normed=True)
 
@@ -89,7 +103,7 @@ print check_sc_alpha
 # backaward variables
 print
 print "bacward variables not scaled"
-print hmm.calc_backward_noscaling(seq, T)
+print hmm.calc_backward_noscaling(seq)
 sc_beta = hmm.calc_backward_scaled(seq, T, c)
 #print sc_beta[:,:]
 check_sc_beta = np.empty(shape=(T,N))
@@ -97,8 +111,10 @@ for t in reversed(range(T)):
     check_sc_beta[t,:] = sc_beta[t,:] / np.prod(c[t:])
 print "check scaled backward variables"
 print check_sc_beta
-
-""" training noscaling
+"""
+"""
+training noscaling
+"""
 """
 print
 # initial approximation
@@ -128,7 +144,7 @@ print hmm.calc_forward_noscaling(seq)[0] > hmm_trained.calc_forward_noscaling(se
 # classification check
 print
 print "classification check"
-T=50
+#T=50
 hmm1 = HiddenMarkovModel(n=3,m=3,seed=11)
 hmm2 = HiddenMarkovModel(n=3,m=3,seed=21)
 seq1 = hmm1.generate_sequence(T, seed=10)
@@ -137,11 +153,15 @@ print "1m-1s: " + str(hmm1.calc_forward_noscaling(seq1)[0])
 print "1m-2s: " + str(hmm1.calc_forward_noscaling(seq2)[0])
 print "2m-1s: " + str(hmm2.calc_forward_noscaling(seq1)[0])
 print "2m-2s: " + str(hmm2.calc_forward_noscaling(seq2)[0])
-
-
+"""
+"""
+Complete training check
+"""
+"""
 hmm_trained = \
     choose_best_hmm_using_bauwelch(seq, train_hmm_baumwelch_noscaling, 
-                                   10, 2, 2, rtol=0.05, max_iter=50
+                                   hmms0_size=10, n=2, m=2,
+                                   rtol=0.01, max_iter=50
                                    )
 
 print "\nHMM generated params:"
@@ -158,3 +178,165 @@ print "compare likelihoods:"
 print "trained: " + str(hmm_trained.calc_forward_noscaling(seq)[0])
 print "true: " + str(hmm.calc_forward_noscaling(seq)[0])
 print hmm.calc_forward_noscaling(seq)[0] > hmm_trained.calc_forward_noscaling(seq)[0]
+"""
+"""
+Testing randomness corectness
+"""
+"""
+n = 5
+T=1000
+seed = 996
+np.random.seed(seed)
+distr1 = generate_discrete_distribution(n)
+a = stats.rv_discrete(values=(np.arange(n), distr1))
+distr2 = generate_discrete_distribution(n)
+b = stats.rv_discrete(values=(np.arange(n), distr2))
+
+vals1 = a.rvs(size=T)
+vals2 = b.rvs(size=T)
+#print vals1
+#print vals2
+
+#print distr1
+#print np.histogram(vals1, bins=np.arange(n+1), normed=True)[0]
+print np.mean((distr1 - np.histogram(vals1, bins=np.arange(n+1), normed=True)[0]) ** 2)
+#print distr2
+#print np.histogram(vals2, bins=np.arange(n+1), normed=True)[0]
+#print np.mean((distr2 - np.histogram(vals2, bins=np.arange(n+1), normed=True)[0]) ** 2)
+
+
+np.random.seed(seed)
+distr1 = generate_discrete_distribution(n)
+a = stats.rv_discrete(values=(np.arange(n), distr1))
+distr2 = generate_discrete_distribution(n)
+b = stats.rv_discrete(values=(np.arange(n), distr2))
+
+vals1 = []
+vals2 = []
+for i in range(T):
+    vals1.append(a.rvs())
+    vals2.append(b.rvs())
+    vals2.append(b.rvs())
+    vals2.append(b.rvs())
+    vals2.append(b.rvs())
+    vals2.append(b.rvs())
+    vals2.append(b.rvs())
+    vals2.append(b.rvs())
+    vals2.append(b.rvs())
+    vals2.append(b.rvs())
+#print vals1
+#print vals2
+
+print
+#print distr1
+#print np.histogram(vals1, bins=np.arange(n+1), normed=True)[0]
+print np.mean((distr1 - np.histogram(vals1, bins=np.arange(n+1), normed=True)[0]) ** 2)
+#print distr2
+#print np.histogram(vals2, bins=np.arange(n+1), normed=True)[0]
+#print np.mean((distr2 - np.histogram(vals2, bins=np.arange(n+1), normed=True)[0]) ** 2)
+"""
+"""
+seq = hmm_trained.generate_sequence(T)
+print "compare likelihoods:"
+print "trained: " + str(hmm_trained.calc_forward_noscaling(seq)[0])
+print "true: " + str(hmm.calc_forward_noscaling(seq)[0])
+print hmm.calc_forward_noscaling(seq)[0] > hmm_trained.calc_forward_noscaling(seq)[0]
+
+hmm = copy.deepcopy(hmm_trained)
+
+hmm_trained = \
+    choose_best_hmm_using_bauwelch(seq, train_hmm_baumwelch_noscaling, 
+                                   hmms0_size=10, n=2, m=2,
+                                   rtol=0.01, max_iter=50
+                                   )
+
+print "\nHMM generated params:"
+print hmm.pi
+print hmm.a
+print hmm.b
+
+print "trained model:"
+print hmm_trained.pi
+print hmm_trained.a
+print hmm_trained.b
+print
+print "compare likelihoods:"
+print "trained: " + str(hmm_trained.calc_forward_noscaling(seq)[0])
+print "true: " + str(hmm.calc_forward_noscaling(seq)[0])
+print hmm.calc_forward_noscaling(seq)[0] > hmm_trained.calc_forward_noscaling(seq)[0]
+"""
+"""
+distr = [0.2,0.5,0.3]
+seq = []
+for i in range(1000):
+    seq.append(_get_sample_discrete_distr(distr))
+print np.histogram(seq, bins=np.arange(len(distr)+1), normed = True)
+"""
+
+print
+
+
+#for i in [100]:
+#for i in [25, 50, 75, 100]:
+for i in [100]:
+    seq1 = seq[0:i]
+    hmm_trained = \
+        choose_best_hmm_using_bauwelch(seq1, train_hmm_baumwelch_noscaling, 
+                                       hmms0_size=10, n=2, m=2,
+                                       rtol=0.01, max_iter=50
+                                       )
+    seq1=seq
+    print "trained model:, seq=" + str(i)
+    print hmm_trained.pi
+    print hmm_trained.a
+    print hmm_trained.b
+    print "compare likelihoods:"
+    print "trained: " + str(hmm_trained.calc_forward_noscaling(seq1)[0])
+    print "true: " + str(hmm.calc_forward_noscaling(seq1)[0])
+    print hmm.calc_forward_noscaling(seq1)[0] > hmm_trained.calc_forward_noscaling(seq1)[0]
+    print
+   
+print "HMM generated params:"
+print hmm.pi
+print hmm.a
+print hmm.b
+
+
+# initial approximation
+#hmm0 = HiddenMarkovModel(N, M, seed=11)
+#hmm0 = copy.deepcopy(hmm)
+"""
+Pi = np.array([0.3, 0.7])
+A = np.array([
+    [0.3, 0.7],
+    [0.7, 0.3]
+    ])
+B = np.array([
+    [0.3, 0.7],
+    [0.6, 0.4]
+    ])
+hmm0 = HiddenMarkovModel(N,M,pi=Pi,a=A,b=B)
+
+print "initial approx:"
+print hmm0.pi
+print hmm0.a
+print hmm0.b
+print
+
+for i in [100]:
+    hmm_trained = train_hmm_baumwelch_noscaling(seq[:i], hmm0)
+    print "trained model: len = " + str(i)
+    print hmm_trained.pi
+    print hmm_trained.a
+    print hmm_trained.b
+    print 
+
+print "\nHMM generated params:"
+print hmm.pi
+print hmm.a
+print hmm.b
+
+print "trained: " + str(hmm_trained.calc_forward_noscaling(seq)[0])
+print "true: " + str(hmm.calc_forward_noscaling(seq)[0])
+print hmm.calc_forward_noscaling(seq)[0] > hmm_trained.calc_forward_noscaling(seq)[0]
+"""
