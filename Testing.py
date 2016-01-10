@@ -278,7 +278,7 @@ print
 
 #for i in [100]:
 #for i in [25, 50, 75, 100]:
-for i in [100]:
+for i in [500]:
     seq1 = seq[0:i]
     hmm_trained = \
         choose_best_hmm_using_bauwelch(seq1, train_hmm_baumwelch_noscaling, 

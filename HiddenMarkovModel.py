@@ -26,14 +26,14 @@ class HiddenMarkovModel:
         # if parameters are not defined - give them some statistically correct
         # default values
         if pi is not None:
-            self.pi = pi.copy()
+            self.pi = np.array(pi)
         elif seed is None:
             self.pi = np.full(n, 1.0/n)
         else:
             self.pi = generate_discrete_distribution(n)
         # transition matrix
         if a is not None:
-            self.a = a.copy()
+            self.a = np.array(a)
         elif seed is None:
             self.a = np.full((n, n), 1.0/n)
         else:
@@ -42,7 +42,7 @@ class HiddenMarkovModel:
                 self.a[i, :] = generate_discrete_distribution(n)          
         # emission matrix
         if b is not None:
-            self.b = b.copy()
+            self.b = np.array(b)
         elif seed is None:
             self.b = np.full((n, m), 1.0/m)
         else:
@@ -174,7 +174,7 @@ class HiddenMarkovModel:
                     self.b[i,seq[t+1]] * np.sum(sc_alpha[t,:]*self.a[:,i])
             c[t+1] = 1.0 / np.sum(alpha[:])
             sc_alpha[t+1,:] = c[t+1] * alpha[:]
-            alpha_pr = alpha.copy()
+            alpha_pr = np.array(alpha)
         # termination:
         loglikelihood = -np.sum(np.log(c[:]))
         return loglikelihood, sc_alpha[:,:], c[:]
@@ -216,7 +216,7 @@ class HiddenMarkovModel:
                 beta[i] = \
                     np.sum(self.a[i,:] * self.b[:,seq[t+1]]  * sc_beta[t+1,:])
             sc_beta[t, :] = c[t] * beta[:]
-            beta_pr = beta.copy()
+            beta_pr = np.array(beta)
         # TODO: return also the likelihood
         return sc_beta
     
@@ -310,9 +310,9 @@ def choose_best_hmm_using_bauwelch(seq, train_func, hmms0_size, n, m,
     # generate approximations if not given any
     if hmms0 is None:
         hmms0 = []
-        rands = np.random.randint(1, high=3000, size=hmms0_size) # seeds
-        for i in range(hmms0_size):
-            hmms0.append(HiddenMarkovModel(n, m, seed=rands[i]))
+        seeds = np.random.randint(1, high=np.iinfo(np.int32).max, size=hmms0_size) # seeds
+        for seed in seeds:
+            hmms0.append(HiddenMarkovModel(n, m, seed=seed))
     # calc and choose the best hmm estimate
     p_max = np.finfo(np.float64).min
     for hmm0 in hmms0:
@@ -322,9 +322,9 @@ def choose_best_hmm_using_bauwelch(seq, train_func, hmms0_size, n, m,
             hmm_best = copy.deepcopy(hmm)
             p_max = p
         #print "another approximation: p=" + str(p)
-        #print hmm.pi
-        #print hmm.a
-        #print hmm.b
+        #print hmm0.pi
+        #print hmm0.a
+        #print hmm0.b
     return hmm_best
 
 def generate_discrete_distribution(n):
