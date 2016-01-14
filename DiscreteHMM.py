@@ -71,7 +71,9 @@ class HiddenMarkovModel:
         np.random.seed(seed)
         # prepare array for sequence
         seq = np.empty(T, dtype=int)
+        states = np.empty(T, dtype=int)
         
+        """
         # discrete distrubution of initial states
         pi_distr = \
             stats.rv_discrete(values = (np.arange(self.n), self.pi))
@@ -88,22 +90,26 @@ class HiddenMarkovModel:
         # generation
         # generate number of initial state
         state = pi_distr.rvs()
+        print state
         # generate observation from the state
         seq[0] = b_distr_list[state].rvs()
         for t in range(1, T):
             # transit to a new state
             state = a_distr_list[state].rvs()
+            print state
             # generate observation from the state
             seq[t] = b_distr_list[state].rvs()
-        
         """
+        
         state = _get_sample_discrete_distr(self.pi)
+        states[0] = state
         seq[0] = _get_sample_discrete_distr(self.b[state,:])
         for t in range(1, T):
             state = _get_sample_discrete_distr(self.a[state,:])
+            states[t] = state
             seq[t] = _get_sample_discrete_distr(self.b[state,:])
-            """
-        return seq
+            
+        return seq, states
     
     def calc_forward_noscaling(self, seq):
         """ calculate forward variables (no scaling)
@@ -271,10 +277,16 @@ def train_hmm_baumwelch_noscaling(seq, hmm0, rtol=0.1, max_iter=10):
     p_prev = -100.0 # likelihood on previous iteration (dummy value)
     p = 100.0       # likelihood on cur iteration (dummy value)
     #while not np.isclose(p_prev,p,atol=eps) and iteration < max_iter:
-    while np.abs(p_prev-p)/p > rtol and iteration < max_iter:
+    #while np.abs(p_prev-p)/p > rtol and iteration < max_iter:
+    #while np.abs(p_prev-p) > rtol and iteration < max_iter:
+    while iteration < max_iter:
         #print np.abs(p_prev-p)/p
         p_prev = p
         p, alpha = hmm.calc_forward_noscaling(seq)
+        #print p
+        #if iteration == 0:
+        #    print "alpha"
+        #    print alpha
         beta = hmm.calc_backward_noscaling(seq)
         xi = hmm.calc_xi_noscaling(seq, alpha, beta, p)
         gamma = hmm.calc_gamma_noscaling(alpha, beta, p, xi)
@@ -291,7 +303,7 @@ def train_hmm_baumwelch_noscaling(seq, hmm0, rtol=0.1, max_iter=10):
                         gamma_sum += gamma[t,i]
                 hmm.b[i,m] = gamma_sum / np.sum(gamma[:,i])
         iteration += 1
-    #print "train_hmm_baumwelch_noscaling: iteration = " + str(iteration)
+    print "train_hmm_baumwelch_noscaling: iteration = " + str(iteration)
     return hmm
     
 def choose_best_hmm_using_bauwelch(seq, train_func, hmms0_size, n, m,
