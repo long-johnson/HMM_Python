@@ -80,7 +80,6 @@ class DHMM:
             state = _get_sample_discrete_distr(self._a[state,:])
             states[t] = state
             seq[t] = _get_sample_discrete_distr(self._b[state,:])
-            
         return seq, states
     
     def _calc_forward_noscale(self, seq):
@@ -327,3 +326,23 @@ def _get_sample_discrete_distr(distr):
         if val < cum:
             return i
     return distr.size-1
+
+def estimate_hmm_params_by_seq_and_states(N, M, seq, states):
+    """ to check that sequence agrees with hmm produced it
+    n -- number of hidden states
+    m -- number of symbols in alphabet
+    seq -- generated sequence
+    states -- hidden states appeared during generation
+    """
+    T = seq.size
+    pi = np.zeros(N)
+    a = np.zeros(shape=(N,N))
+    b = np.zeros(shape=(N,M))
+    pi[states[0]] = 1.0
+    for t in range(T-1):
+        a[states[t], states[t+1]] += 1.0
+    a = np.transpose(np.transpose(a) / np.sum(a, axis=1))
+    for t in range(T):
+        b[states[t], seq[t]] += 1.0
+    b = np.transpose(np.transpose(b) / np.sum(b, axis=1))
+    return pi, a, b
