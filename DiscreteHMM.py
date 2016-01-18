@@ -50,37 +50,42 @@ class DHMM:
             for i in range(n):
                 self._b[i, :] = _generate_discrete_distribution(m)
     
-    def generate_sequence(self, T, seed=None):
+    def generate_sequences(self, K, T, seed=None):
         """
-        Generate sequence of observations produced by this model
+        Generate sequences of observations produced by this model
         
         Parameters
         ----------
+        K : int
+            number of sequences
         T : int
-            Length of sequence
+            Length of each sequence
         seed : int, optional
             Seed for random generator
             
         Returns
         -------
-        return : ndarray
-            Generated sequence
+        seqs : list of 1darrays
+            List of generated sequences
+        state_seqs : list of 1darrays
+            List of hidden states sequences used for generation
         """
         # preparation
         # randomize with accordance to seed
         np.random.seed(seed)
-        # prepare array for sequence
-        seq = np.empty(T, dtype=int)
-        states = np.empty(T, dtype=int)
+        # prepare list for sequences
+        seqs = [np.empty(T,dtype=np.int32) for k in range(K)]
+        state_seqs = [np.empty(T,dtype=np.int32) for k in range(K)]
         # generation
-        state = _get_sample_discrete_distr(self._pi)
-        states[0] = state
-        seq[0] = _get_sample_discrete_distr(self._b[state,:])
-        for t in range(1, T):
-            state = _get_sample_discrete_distr(self._a[state,:])
-            states[t] = state
-            seq[t] = _get_sample_discrete_distr(self._b[state,:])
-        return seq, states
+        for k in range(K):
+            state = _get_sample_discrete_distr(self._pi)
+            state_seqs[k][0] = state
+            seqs[k][0] = _get_sample_discrete_distr(self._b[state,:])
+            for t in range(1, T):
+                state = _get_sample_discrete_distr(self._a[state,:])
+                state_seqs[k][t] = state
+                seqs[k][t] = _get_sample_discrete_distr(self._b[state,:])
+        return seqs, state_seqs
     
     def _calc_forward_noscale(self, seq):
         """ calculate forward variables (no scaling)
@@ -100,6 +105,14 @@ class DHMM:
         # termination:
         likelihood = np.sum(alpha[-1,:])
         return likelihood, alpha[:,:]
+    
+    def calc_likelihood_noscale(self, seqs):
+        """ calculate average likelihood that all the sequences
+        was produced by this model
+        seqs -- list of sequences
+        return -- average likelihood
+        """
+        return np.sum([self._calc_forward_noscale(seq)[0] for seq in seqs])
     
     def _calc_forward_logsumexp(self, seq):
         # TODO: needs to be thought through more carefully
@@ -234,14 +247,14 @@ class DHMM:
             gamma[:, :] = alpha[:, :] * beta[:, :] / p
         return gamma[:, :]
         
-    def train_baumwelch_noscale(self, seq, rtol, max_iter):
+    def train_baumwelch_noscale(self, seqs, rtol, max_iter):
         """ Train a HMM given a training sequence & an initial approximation 
         initial approximation is taken from class parameters
-        seq -- training sequence
+        seqs -- list of K training sequences of various length
         rtol -- relative tolerance for termination of iteration process
         max_iter -- max number of iterations
         """
-        T = seq.size
+        K = len(seqs)
         iteration = 0
         p_prev = -100.0 # likelihood on previous iteration
         p = 100.0       # likelihood on cur iteration
@@ -249,31 +262,43 @@ class DHMM:
         # TODO: then take previous parameters ?
         while np.abs(p_prev-p)/p > rtol and iteration < max_iter:
             p_prev = p
-            p, alpha = self._calc_forward_noscaling(seq)
-            beta = self._calc_backward_noscaling(seq)
-            xi = self._calc_xi_noscaling(seq, alpha, beta, p)
-            gamma = self._calc_gamma_noscaling(alpha, beta, p, xi)
+            pi_up = np.zeros(self._n)
+            a_up = np.zeros(shape=(self._n, self._n))
+            a_down = np.zeros(self._n)
+            b_up = np.zeros(shape=(self._n, self._m))
+            b_down = np.zeros(shape=(self._n))
+            for k in range(K):
+                seq = seqs[k]
+                T = seq.size
+                p, alpha = self._calc_forward_noscale(seq)
+                beta = self._calc_backward_noscale(seq)
+                xi = self._calc_xi_noscale(seq, alpha, beta, p)
+                gamma = self._calc_gamma_noscale(alpha, beta, p, xi)
+                pi_up[:] += gamma[0,:]
+                a_up[:,:] += np.sum(xi[:,:,:], axis=0)
+                temp = np.sum(gamma[:-1,:], axis=0)
+                a_down[:] += temp
+                # TODO: is it possible to shorten this for-loop?
+                for i in range(self._n):
+                    for m in range(self._m):
+                        for t in range(T):
+                            if seq[t] == m:
+                                b_up[i,m] += gamma[-1,i]
+                b_down[:] += temp + gamma[-1,:]
             # re-estimation
-            self._pi[:] = gamma[0,:]
-            for i in range(self._n):
-                for j in range(self._n):
-                    self._a[i,j] = np.sum(xi[:,i,j]) / np.sum(gamma[:-1,i]) 
-            for i in range(self._n):
-                for m in range(self._m):
-                    gamma_sum = 0.0
-                    for t in range(T):
-                        if seq[t] == m:
-                            gamma_sum += gamma[t,i]
-                    self._b[i,m] = gamma_sum / np.sum(gamma[:,i])
+            self._pi[:] = pi_up[:] / K
+            self._a[:,:] = (a_up[:,:].T / a_down[:]).T
+            self._b[:,:] = (b_up[:,:].T / b_down[:]).T
             iteration += 1
-        likelihood, _ = self._calc_forward_noscaling(seq)
+        # TODO: what if various length?
+        likelihood = self.calc_likelihood_noscale(seqs)
         return likelihood, iteration
     
-def choose_best_hmm_using_bauwelch(seq, hmms0_size, n, m, isScale = False,
+def choose_best_hmm_using_bauwelch(seqs, hmms0_size, n, m, isScale = False,
                                    hmms0=None, rtol=0.1, max_iter=10,
                                    verbose=False):
     """ Train several hmms using baumwelch algorithm and choose the best one
-    seq -- training sequence 
+    seqs -- list of training sequences
     hmms0_size -- number of initial approximations
     n -- number of HMM states
     m -- number of HMM symbols
@@ -296,7 +321,7 @@ def choose_best_hmm_using_bauwelch(seq, hmms0_size, n, m, isScale = False,
     for hmm0 in hmms0:
         # TODO: scaled baum and ternary operator
         if not isScale:
-            p, iteration = hmm0.train_baumwelch_noscale(seq, rtol, max_iter)
+            p, iteration = hmm0.train_baumwelch_noscale(seqs, rtol, max_iter)
         else:
             raise NotImplementedError, "Scaled baum-welch is not impl. yet"
         if (p_max < p):
@@ -304,9 +329,10 @@ def choose_best_hmm_using_bauwelch(seq, hmms0_size, n, m, isScale = False,
             p_max = p
         if verbose:
             print "another approximation: p=" + str(p)
-            print hmm0.pi
-            print hmm0.a
-            print hmm0.b
+            print "iteration = " + str(iteration)
+            print hmm0._pi
+            print hmm0._a
+            print hmm0._b
     return hmm_best
 
 def _generate_discrete_distribution(n):
@@ -327,7 +353,26 @@ def _get_sample_discrete_distr(distr):
             return i
     return distr.size-1
 
-def estimate_hmm_params_by_seq_and_states(N, M, seq, states):
+def estimate_hmm_params_by_seq_and_states(N, M, seqs, state_seqs):
+    """ to check that sequences agrees with hmm produced it
+    n -- number of hidden states
+    m -- number of symbols in alphabet
+    seq -- generated sequence
+    states -- hidden states appeared during generation
+    """
+    K = len(seqs)
+    pi = np.zeros(N)
+    a = np.zeros(shape=(N,N))
+    b = np.zeros(shape=(N,M))
+    for k in range(K):
+        pi_, a_, b_ = \
+            _estimate_hmm_params_by_seq_and_states(N,M,seqs[k],state_seqs[k])
+        pi += pi_
+        a += a_
+        b += b_
+    return pi/K, a/K, b/K
+    
+def _estimate_hmm_params_by_seq_and_states(N, M, seq, state_seq):
     """ to check that sequence agrees with hmm produced it
     n -- number of hidden states
     m -- number of symbols in alphabet
@@ -338,11 +383,11 @@ def estimate_hmm_params_by_seq_and_states(N, M, seq, states):
     pi = np.zeros(N)
     a = np.zeros(shape=(N,N))
     b = np.zeros(shape=(N,M))
-    pi[states[0]] = 1.0
+    pi[state_seq[0]] = 1.0
     for t in range(T-1):
-        a[states[t], states[t+1]] += 1.0
-    a = np.transpose(np.transpose(a) / np.sum(a, axis=1))
+        a[state_seq[t], state_seq[t+1]] += 1.0
+    a = (a.T / np.sum(a, axis=1)).T
     for t in range(T):
-        b[states[t], seq[t]] += 1.0
-    b = np.transpose(np.transpose(b) / np.sum(b, axis=1))
+        b[state_seq[t], seq[t]] += 1.0
+    b = (b.T / np.sum(b, axis=1)).T
     return pi, a, b
