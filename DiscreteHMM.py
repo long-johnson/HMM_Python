@@ -283,7 +283,7 @@ class DHMM:
                     for m in range(self._m):
                         for t in range(T):
                             if seq[t] == m:
-                                b_up[i,m] += gamma[-1,i]
+                                b_up[i,m] += gamma[t,i]
                 b_down[:] += temp + gamma[-1,:]
             # re-estimation
             self._pi[:] = pi_up[:] / K
