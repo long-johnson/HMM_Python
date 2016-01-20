@@ -87,21 +87,32 @@ class DHMM:
                 seqs[k][t] = _get_sample_discrete_distr(self._b[state,:])
         return seqs, state_seqs
     
-    def _calc_forward_noscale(self, seq):
+    def _calc_forward_noscale(self, seq, avail=None):
         """ calculate forward variables (no scaling)
         seq -- sequence of observations (1d array)
+        avail -- availability of sequence elements
         return(1) -- likelihood of sequence being produced by model
         return(2) -- alpha: array of forward variables
-        """        
+        """
+        # if avail is not defined consider that all observations are available
+        if avail is None:
+            avail = np.full(seq.size, fill_value=True)
         T = seq.size
         # initialization step:
         alpha = np.empty((T, self._n))
-        alpha[0,:] = self._pi[:] * self._b[:,seq[0]]
+        if avail[0]:
+            alpha[0,:] = self._pi[:] * self._b[:,seq[0]]
+        else:
+            alpha[0,:] = self._pi[:]
         # induction step:
         for t in range(T-1):
-            for i in range(self._n):
-                alpha[t+1,i] = \
-                    self._b[i,seq[t+1]] * np.sum(alpha[t,:]*self._a[:,i])
+            if avail[t+1]:
+                for i in range(self._n):
+                    alpha[t+1,i] = \
+                        self._b[i,seq[t+1]] * np.sum(alpha[t,:]*self._a[:,i])
+            else:
+                for i in range(self._n):
+                    alpha[t+1,i] = np.sum(alpha[t,:] * self._a[:,i])
         # termination:
         likelihood = np.sum(alpha[-1,:])
         return likelihood, alpha[:,:]
@@ -169,20 +180,27 @@ class DHMM:
         loglikelihood = -np.sum(np.log(c[:]))
         return loglikelihood, sc_alpha[:,:], c[:]
     
-    def _calc_backward_noscale(self, seq):
+    def _calc_backward_noscale(self, seq, avail=None):
         """ Calc backward variables given the model and sequence
         seq -- sequence of observations, array(T)
         return -- beta: array(T, n) of backward variables
         """
+        # if avail is not defined consider that all observations are available
+        if avail is None:
+            avail = np.full(seq.size, fill_value=True)
         T = seq.size
         beta = np.empty(shape=(T, self._n))
         # initialization
         beta[-1, :] = 1.0
         # induction
         for t in reversed(range(T-1)):
-            for i in range(self._n):
-                beta[t,i] = \
-                    np.sum(self._a[i,:] * self._b[:,seq[t+1]] * beta[t+1,:])
+            if avail[t+1]:
+                for i in range(self._n):
+                    beta[t,i] = \
+                        np.sum(self._a[i,:] * self._b[:,seq[t+1]] * beta[t+1,:])
+            else:
+                for i in range(self._n):
+                    beta[t,i] = np.sum(self._a[i,:] * beta[t+1,:])
         # TODO: return also the likelihood  
         #print "beta" + str(np.sum(beta[0,:]*self._b[:,seq[0]]))
         return beta[:,:]
@@ -247,7 +265,7 @@ class DHMM:
             gamma[:, :] = alpha[:, :] * beta[:, :] / p
         return gamma[:, :]
         
-    def train_baumwelch_noscale(self, seqs, rtol, max_iter):
+    def train_baumwelch_noscale(self, seqs, rtol, max_iter, avails = None):
         """ Train a HMM given a training sequence & an initial approximation 
         initial approximation is taken from class parameters
         seqs -- list of K training sequences of various length
@@ -269,9 +287,10 @@ class DHMM:
             b_down = np.zeros(shape=(self._n))
             for k in range(K):
                 seq = seqs[k]
+                avail = avails[k] if avails is not None else None
                 T = seq.size
-                p, alpha = self._calc_forward_noscale(seq)
-                beta = self._calc_backward_noscale(seq)
+                p, alpha = self._calc_forward_noscale(seq, avail)
+                beta = self._calc_backward_noscale(seq, avail)
                 xi = self._calc_xi_noscale(seq, alpha, beta, p)
                 gamma = self._calc_gamma_noscale(alpha, beta, p, xi)
                 pi_up[:] += gamma[0,:]
@@ -296,7 +315,7 @@ class DHMM:
     
 def choose_best_hmm_using_bauwelch(seqs, hmms0_size, n, m, isScale = False,
                                    hmms0=None, rtol=0.1, max_iter=10,
-                                   verbose=False):
+                                   avails = None, verbose=False):
     """ Train several hmms using baumwelch algorithm and choose the best one
     seqs -- list of training sequences
     hmms0_size -- number of initial approximations
@@ -319,9 +338,10 @@ def choose_best_hmm_using_bauwelch(seqs, hmms0_size, n, m, isScale = False,
     # calc and choose the best hmm estimate
     p_max = np.finfo(np.float64).min # minimal value possible
     for hmm0 in hmms0:
-        # TODO: scaled baum and ternary operator
+        # TODO: scaled baum
         if not isScale:
-            p, iteration = hmm0.train_baumwelch_noscale(seqs, rtol, max_iter)
+            p, iteration = \
+                hmm0.train_baumwelch_noscale(seqs, rtol, max_iter, avails)
         else:
             raise NotImplementedError, "Scaled baum-welch is not impl. yet"
         if (p_max < p):
