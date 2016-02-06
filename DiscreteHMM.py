@@ -301,8 +301,17 @@ class DHMM:
                 for i in range(self._n):
                     for m in range(self._m):
                         for t in range(T):
-                            if seq[t] == m:
-                                b_up[i,m] += gamma[t,i]
+                            if avail is None:
+                                if seq[t] == m:
+                                    b_up[i,m] += gamma[t,i]
+                            else:
+                                if avail[t]:
+                                    if seq[t] == m:
+                                        b_up[i,m] += gamma[t,i]
+                                else:
+                                    # equally possible
+                                    b_up[i,m] += gamma[t,i]/self._m
+                            
                 b_down[:] += temp + gamma[-1,:]
             # re-estimation
             self._pi[:] = pi_up[:] / K
