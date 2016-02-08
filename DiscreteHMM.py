@@ -117,13 +117,17 @@ class DHMM:
         likelihood = np.sum(alpha[-1,:])
         return likelihood, alpha[:,:]
     
-    def calc_likelihood_noscale(self, seqs):
+    def calc_likelihood_noscale(self, seqs, avails=None):
         """ calculate average likelihood that all the sequences
         was produced by this model
         seqs -- list of sequences
         return -- average likelihood
         """
-        return np.sum([self._calc_forward_noscale(seq)[0] for seq in seqs])
+        if avails is None:
+            return np.sum([self._calc_forward_noscale(seq)[0] for seq in seqs])
+        else:
+            return np.sum([self._calc_forward_noscale(seqs[k], avails[k])[0] \
+                           for k in range(len(seqs))])
     
     def _calc_forward_logsumexp(self, seq):
         # TODO: needs to be thought through more carefully
@@ -228,7 +232,7 @@ class DHMM:
         # TODO: return also the likelihood
         return sc_beta
     
-    def _calc_xi_noscale(self, seq, alpha, beta, p):
+    def _calc_xi_noscale(self, seq, alpha, beta, p, avail=None):
         """ Calc xi(t,i,j), t=1..T, i,j=1..N - array of probabilities of
         being in state i and go to state j in time t given the model and seq
         seq -- sequence of observations, array(T)
@@ -239,10 +243,20 @@ class DHMM:
         """
         T = seq.size
         xi = np.empty(shape=(T-1, self._n, self._n))
-        for t in range(T-1):
-            for i in range(self._n):
-                xi[t,i,:] = \
-                    alpha[t,i] * self._a[i,:] * self._b[:,seq[t+1]] * beta[t+1,:]
+        if avail is None:
+            for t in range(T-1):
+                for i in range(self._n):                    
+                    xi[t,i,:] = \
+                        alpha[t,i] * self._a[i,:] * self._b[:,seq[t+1]] * beta[t+1,:]
+        else:
+            for t in range(T-1):
+                if avail[t+1]:
+                    for i in range(self._n):                    
+                        xi[t,i,:] = alpha[t,i] * self._a[i,:] * \
+                                    self._b[:,seq[t+1]] * beta[t+1,:]
+                else:
+                    for i in range(self._n):
+                        xi[t,i,:] = alpha[t,i] * self._a[i,:] * beta[t+1,:]
         xi[:,:,:] /= p
         return xi
     
@@ -286,40 +300,37 @@ class DHMM:
             b_up = np.zeros(shape=(self._n, self._m))
             b_down = np.zeros(shape=(self._n))
             for k in range(K):
+                # expectation
                 seq = seqs[k]
                 avail = avails[k] if avails is not None else None
-                T = seq.size
                 p, alpha = self._calc_forward_noscale(seq, avail)
                 beta = self._calc_backward_noscale(seq, avail)
-                xi = self._calc_xi_noscale(seq, alpha, beta, p)
+                xi = self._calc_xi_noscale(seq, alpha, beta, p, avail)
                 gamma = self._calc_gamma_noscale(alpha, beta, p, xi)
-                pi_up[:] += gamma[0,:]
+                # accumulating for maximization
+                pi_up[:] += gamma[0,:]                
                 a_up[:,:] += np.sum(xi[:,:,:], axis=0)
                 temp = np.sum(gamma[:-1,:], axis=0)
                 a_down[:] += temp
-                # TODO: is it possible to shorten this for-loop?
-                for i in range(self._n):
+                if avails is None:
+                    # sum all gammas where observation is symbol m  
                     for m in range(self._m):
-                        for t in range(T):
-                            if avail is None:
-                                if seq[t] == m:
-                                    b_up[i,m] += gamma[t,i]
-                            else:
-                                if avail[t]:
-                                    if seq[t] == m:
-                                        b_up[i,m] += gamma[t,i]
-                                else:
-                                    # equally possible
-                                    b_up[i,m] += gamma[t,i]/self._m
-                            
-                b_down[:] += temp + gamma[-1,:]
+                        b_up[:,m] += np.sum(gamma[seq[:]==m,:], axis=0)
+                    b_down[:] += temp + gamma[-1,:]
+                else:
+                    # sum all gammas where observation is avail and is symbol m                  
+                    for m in range(self._m):
+                        condition = (seq[:]==m) & (avail[:])
+                        b_up[:,m] += np.sum(gamma[condition,:], axis=0)
+                    # sum all gammas where observation is availiable
+                    b_down[:] += np.sum(gamma[avail[:],:], axis=0)
             # re-estimation
             self._pi[:] = pi_up[:] / K
             self._a[:,:] = (a_up[:,:].T / a_down[:]).T
             self._b[:,:] = (b_up[:,:].T / b_down[:]).T
             iteration += 1
         # TODO: what if various length?
-        likelihood = self.calc_likelihood_noscale(seqs)
+        likelihood = self.calc_likelihood_noscale(seqs, avails)
         return likelihood, iteration
         
     def train_baumwech_gluing(self, seqs, rtol, max_iter, avails,
