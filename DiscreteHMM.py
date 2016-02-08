@@ -321,6 +321,23 @@ class DHMM:
         # TODO: what if various length?
         likelihood = self.calc_likelihood_noscale(seqs)
         return likelihood, iteration
+        
+    def train_baumwech_gluing(self, seqs, rtol, max_iter, avails,
+                              isScale=False):
+        """ Glue segments between gaps together and then train Baum-Welch
+        """
+        K = len(seqs)
+        # remove all gaps and just glue remaining segments together
+        seqs_glued = []
+        for k in range(K):
+            glued = seqs[k][avails[k]]  # fancy indexing
+            seqs_glued.append(glued)
+        if isScale:
+            raise NotImplementedError, "Scaled baum-welch is not impl. yet"
+        else:
+            likelihood, iteration = \
+                self.train_baumwelch_noscale(seqs_glued, rtol, max_iter)
+        return likelihood, iteration
     
 def choose_best_hmm_using_bauwelch(seqs, hmms0_size, n, m, isScale = False,
                                    hmms0=None, rtol=0.1, max_iter=10,
@@ -348,11 +365,12 @@ def choose_best_hmm_using_bauwelch(seqs, hmms0_size, n, m, isScale = False,
     p_max = np.finfo(np.float64).min # minimal value possible
     for hmm0 in hmms0:
         # TODO: scaled baum
-        if not isScale:
+        if isScale:
+            raise NotImplementedError, "Scaled baum-welch is not impl. yet"
+        else:
             p, iteration = \
                 hmm0.train_baumwelch_noscale(seqs, rtol, max_iter, avails)
-        else:
-            raise NotImplementedError, "Scaled baum-welch is not impl. yet"
+            
         if (p_max < p):
             hmm_best = copy.deepcopy(hmm0)
             p_max = p
