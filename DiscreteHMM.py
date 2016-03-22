@@ -174,6 +174,7 @@ class DHMM:
         sc_alpha[0,:] = alpha_pr[:] * c[0]
         # induction
         for t in range(T-1):
+            # TODO: optimize
             for i in range(self._n):
                 alpha[i] = \
                     self._b[i,seq[t+1]] * np.sum(sc_alpha[t,:]*self._a[:,i])
@@ -199,14 +200,17 @@ class DHMM:
         # induction
         for t in reversed(range(T-1)):
             if avail[t+1]:
+                # TODO: optimize
+                #beta[t,:] = np.sum(np.prod(self._a[:,:] * self._b[:,seq[t+1]], axis=1) * beta[t+1,:], axis=0)
                 for i in range(self._n):
                     beta[t,i] = \
                         np.sum(self._a[i,:] * self._b[:,seq[t+1]] * beta[t+1,:])
             else:
+                # TODO: optimize
                 for i in range(self._n):
                     beta[t,i] = np.sum(self._a[i,:] * beta[t+1,:])
-        # TODO: return also the likelihood  
-        #print "beta" + str(np.sum(beta[0,:]*self._b[:,seq[0]]))
+        # likelihood  
+        #print "beta likelihood" + str(np.sum(beta[0,:]*self._b[:,seq[0]]))
         return beta[:,:]
         
     def _calc_backward_scaled(self, seq, c):
@@ -333,7 +337,7 @@ class DHMM:
         likelihood = self.calc_likelihood_noscale(seqs, avails)
         return likelihood, iteration
         
-    def train_baumwech_gluing(self, seqs, rtol, max_iter, avails,
+    def train_baumwelch_gluing(self, seqs, rtol, max_iter, avails,
                               isScale=False):
         """ Glue segments between gaps together and then train Baum-Welch
         """
@@ -349,10 +353,38 @@ class DHMM:
             likelihood, iteration = \
                 self.train_baumwelch_noscale(seqs_glued, rtol, max_iter)
         return likelihood, iteration
+        
+    def train_baumwelch_multiseq(self, seqs, rtol, max_iter, avails,
+                                      isScale=False, min_len=1):
+        """ Slice sequence with gaps into multisequence and then train
+            min_len -- minimal length of sequence in final multisequence
+        """
+        multiseq = []
+        K = len(seqs)
+        for k in range(K):
+            seq = seqs[k]
+            gap_indexes = np.nonzero(avails[k]==False)[0]
+            # split seqs by gap_indexes
+            seq_splits = np.split(seq, gap_indexes)
+            # then trim every first item in every split but not in first split
+            if seq_splits[0].size >= min_len:
+                multiseq.append(seq_splits[0])
+            for seq_split in seq_splits[1:]:
+                to_add = seq_split[1:]
+                if to_add.size >= min_len:
+                    multiseq.append(to_add)
+        #print multiseq
+        if isScale:
+            raise NotImplementedError, "Scaled baum-welch is not impl. yet"
+        else:
+            likelihood, iteration = \
+                self.train_baumwelch_noscale(multiseq, rtol, max_iter)
+        return likelihood, iteration
+            
     
-def choose_best_hmm_using_bauwelch(seqs, hmms0_size, n, m, isScale = False,
-                                   hmms0=None, rtol=0.1, max_iter=10,
-                                   avails = None, verbose=False):
+def choose_best_hmm_using_bauwelch(seqs, hmms0_size, n, m, algorithm='marginalization',
+                                   isScale=False, hmms0=None, rtol=1e-1, 
+                                   max_iter=None, avails = None, verbose=False):
     """ Train several hmms using baumwelch algorithm and choose the best one
     seqs -- list of training sequences
     hmms0_size -- number of initial approximations
@@ -363,7 +395,10 @@ def choose_best_hmm_using_bauwelch(seqs, hmms0_size, n, m, isScale = False,
     mode2: hmms0 -- None -- will be generated randomly
     rtol -- relative tolerance (stopping criterion)
     max_iter -- (stopping criterion)
+    return: hmm_best, iter_max
     """
+    assert algorithm in ('marginalization', 'gluing'),\
+        "Invalid algorithm '{}'".format(algorithm)
     # generate approximations if not given any
     if hmms0 is None:
         hmms0 = []
@@ -374,24 +409,30 @@ def choose_best_hmm_using_bauwelch(seqs, hmms0_size, n, m, isScale = False,
             hmms0.append(DHMM(n, m, seed=seed))
     # calc and choose the best hmm estimate
     p_max = np.finfo(np.float64).min # minimal value possible
+    hmm_best = copy.deepcopy(hmms0)
+    iter_max = -1
     for hmm0 in hmms0:
         # TODO: scaled baum
         if isScale:
             raise NotImplementedError, "Scaled baum-welch is not impl. yet"
         else:
-            p, iteration = \
-                hmm0.train_baumwelch_noscale(seqs, rtol, max_iter, avails)
-            
+            if  algorithm == 'marginalization':
+                p, iteration = \
+                    hmm0.train_baumwelch_noscale(seqs, rtol, max_iter, avails)
+            if algorithm == 'gluing':
+                p, iteration = \
+                    hmm0.train_baumwelch_gluing(seqs, rtol, max_iter, avails)
         if (p_max < p):
             hmm_best = copy.deepcopy(hmm0)
             p_max = p
+            iter_max = iteration
         if verbose:
             print "another approximation: p=" + str(p)
             print "iteration = " + str(iteration)
             print hmm0._pi
             print hmm0._a
             print hmm0._b
-    return hmm_best
+    return hmm_best, iter_max
 
 def _generate_discrete_distribution(n):
     """ Generate n values > 0.0, whose sum equals 1.0
@@ -449,3 +490,24 @@ def _estimate_hmm_params_by_seq_and_states(N, M, seq, state_seq):
         b[state_seq[t], seq[t]] += 1.0
     b = (b.T / np.sum(b, axis=1)).T
     return pi, a, b
+    
+def classify_seqs(seqs, hmms, avails=None, isScale=False):
+    if isScale:
+        raise NotImplementedError, "Scaled classify_seqs is not impl. yet"
+    predictions = []
+    for k in range(len(seqs)):
+        seq = seqs[k]
+        p_max = np.finfo(np.float64).min
+        s_max = 0
+        for s in range(len(hmms)):
+            hmm = hmms[s]
+            if avails is not None:
+                p = hmm.calc_likelihood_noscale([seq], [avails[k]])
+            else:
+                p = hmm.calc_likelihood_noscale([seq])
+            if p > p_max:
+                p_max = p
+                s_max = s
+        predictions.append(s_max)
+    return predictions
+    
