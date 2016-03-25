@@ -409,20 +409,20 @@ def choose_best_hmm_using_bauwelch(seqs, hmms0_size, n, m, algorithm='marginaliz
             hmms0.append(DHMM(n, m, seed=seed))
     # calc and choose the best hmm estimate
     p_max = np.finfo(np.float64).min # minimal value possible
-    hmm_best = copy.deepcopy(hmms0)
+    hmm_best = None
     iter_max = -1
     for hmm0 in hmms0:
         # TODO: scaled baum
         if isScale:
             raise NotImplementedError, "Scaled baum-welch is not impl. yet"
         else:
-            if  algorithm == 'marginalization':
+            if algorithm == 'marginalization':
                 p, iteration = \
                     hmm0.train_baumwelch_noscale(seqs, rtol, max_iter, avails)
             if algorithm == 'gluing':
                 p, iteration = \
                     hmm0.train_baumwelch_gluing(seqs, rtol, max_iter, avails)
-        if (p_max < p):
+        if (p_max < p and np.isfinite(p)):
             hmm_best = copy.deepcopy(hmm0)
             p_max = p
             iter_max = iteration
