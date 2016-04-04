@@ -289,6 +289,7 @@ class DHMM:
         seqs -- list of K training sequences of various length
         rtol -- relative tolerance for termination of iteration process
         max_iter -- max number of iterations
+        return -- likelihood, iteration
         """
         K = len(seqs)
         iteration = 0
@@ -381,7 +382,94 @@ class DHMM:
                 self.train_baumwelch_noscale(multiseq, rtol, max_iter)
         return likelihood, iteration
             
+    def train_bauwelch_impute(self, seqs, rtol, max_iter, avails, isScale=False,
+                              isRegressive=False):
+        """ Train HMM with Baum-Welch by imputing missing observations using 
+        Viterbi decoder.
+        isRegressive -- 
+            true: imputation begins from the start of sequence after each imputed gap
+            false: imputation performed once
+        return -- likelihood, iteration
+        """
+        if isScale:            raise NotImplementedError, "Scaled baum-welch is not impl. yet"
+        # Choosing the imputation mode:
+        if isRegressive:
+            raise NotImplementedError, "Regressive is not implemented yet"
+        else:
+            #hmm0 = copy.deepcopy(self)
+            self.train_baumwelch_noscale(seqs, rtol, max_iter, avails)
+            states_decoded = self.decode_viterbi(seqs, avails)
+            seqs_imputed = self.impute_by_states(seqs, avails, states_decoded) # TODO:
+            # TODO: need this?            
+            # self = copy.deepcopy(hmm0)
+            p, it = self.train_baumwelch_noscale(seqs_imputed, rtol, max_iter)
+        return p, it
+        
+    def decode_viterbi(self, seqs, avails=None):
+        """ Scaled multisequence version
+        Infer the sequence of hidden states that were reached during generation
+        return -- states_decoded
+        """
+        K = len(seqs)
+        T = seqs[0].size
+        states = []
+        if avails is not None:
+            for k in range(K): 
+                states.append(self._decode_viterbi(seqs[k], avails[k]))
+        else:
+            avail = np.full(T, True, dtype=np.bool)
+            for k in range(K): 
+                states.append(self._decode_viterbi(seqs[k], avail))
+        return states
     
+    def _decode_viterbi(self, seq, avail):
+        """ Scaled one-sequence version
+        Infer the sequence of hidden states that were reached during generation
+        return -- states_decoded
+        """
+        T = seq.size   
+        aran = np.arange(self._n, dtype=np.int32) # for selecting max columns
+        # precompute logs of transpose(a) and b
+        # TODO: take care of zero probabilities?
+        log_a_tr = (np.log(self._a)).T
+        log_b = np.log(self._b)
+        # initialization
+        psi = np.empty(shape=(T, self._n), dtype=np.int32)
+        if avail[0]:
+            delta = np.log(self._pi) + log_b[:,seq[0]]     
+        else:
+            delta = np.log(self._pi)    
+        # recursion
+        for t in range(1,T):
+            temp = delta + log_a_tr
+            argmax = np.argmax(temp, axis=1)
+            psi[t,:] = argmax
+            if avail[t]:
+                # aran is for selecting different columns (accord. to argmax) per row
+                delta = temp[aran, argmax] + log_b[:,seq[t]]
+            else:
+                delta = temp[aran, argmax]
+        # backtracking
+        q = np.empty(T, dtype=np.int32)
+        q[-1] = np.argmax(delta)
+        for t in reversed(range(T-1)):
+            q[t] = psi[t+1, q[t+1]]
+        return q
+        
+    def impute_by_states(self, seqs_, avails, states):
+        """ Impute gaps according to the most probable hidden states path
+        """
+        seqs = copy.deepcopy(seqs_)
+        K = len(seqs)
+        for k in range(K):
+            seq = seqs[k]
+            avail = avails[k]
+            #dbg = np.where(avail==False)
+            for t in np.where(avail==False)[0]:
+                seq[t] = np.argmax(self._b[states[k][t],:])
+        return seqs
+            
+
 def choose_best_hmm_using_bauwelch(seqs, hmms0_size, n, m, algorithm='marginalization',
                                    isScale=False, hmms0=None, rtol=1e-1, 
                                    max_iter=None, avails = None, verbose=False):
@@ -397,7 +485,7 @@ def choose_best_hmm_using_bauwelch(seqs, hmms0_size, n, m, algorithm='marginaliz
     max_iter -- (stopping criterion)
     return: hmm_best, iter_max
     """
-    assert algorithm in ('marginalization', 'gluing'),\
+    assert algorithm in ('marginalization', 'gluing', 'viterbi'),\
         "Invalid algorithm '{}'".format(algorithm)
     # generate approximations if not given any
     if hmms0 is None:
@@ -422,6 +510,9 @@ def choose_best_hmm_using_bauwelch(seqs, hmms0_size, n, m, algorithm='marginaliz
             if algorithm == 'gluing':
                 p, iteration = \
                     hmm0.train_baumwelch_gluing(seqs, rtol, max_iter, avails)
+            if algorithm == 'viterbi':
+                p, iteration = \
+                    hmm0.train_bauwelch_impute(seqs, rtol, max_iter, avails)
         if (p_max < p and np.isfinite(p)):
             hmm_best = copy.deepcopy(hmm0)
             p_max = p
