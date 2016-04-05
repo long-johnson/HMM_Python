@@ -392,17 +392,18 @@ class DHMM:
             false: imputation performed once
         return -- likelihood, iteration
         """
-        if isScale:            raise NotImplementedError, "Scaled baum-welch is not impl. yet"
+        if isScale:
+            raise NotImplementedError, "Scaled baum-welch is not impl. yet"
         # Choosing the imputation mode:
         if isRegressive:
             raise NotImplementedError, "Regressive is not implemented yet"
         else:
-            #hmm0 = copy.deepcopy(self)
+            hmm0 = copy.deepcopy(self)
             self.train_baumwelch_noscale(seqs, rtol, max_iter, avails)
             states_decoded = self.decode_viterbi(seqs, avails)
             seqs_imputed = self.impute_by_states(seqs, avails, states_decoded) # TODO:
             # TODO: need this?            
-            #self = copy.deepcopy(hmm0)
+            self = copy.deepcopy(hmm0)
             p, it = self.train_baumwelch_noscale(seqs_imputed, rtol, max_iter)
         return p, it
         
