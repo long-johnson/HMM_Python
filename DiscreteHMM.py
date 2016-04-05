@@ -94,28 +94,32 @@ class DHMM:
         return(1) -- likelihood of sequence being produced by model
         return(2) -- alpha: array of forward variables
         """
-        # if avail is not defined consider that all observations are available
-        if avail is None:
-            avail = np.full(seq.size, fill_value=True)
         T = seq.size
-        # initialization step:
         alpha = np.empty((T, self._n))
-        if avail[0]:
-            alpha[0,:] = self._pi[:] * self._b[:,seq[0]]
+        if avail is None:
+            # initialization step:
+            alpha[0,:] = self._pi * self._b[:,seq[0]]
+            # induction step:
+            for t in range(T-1):
+                for i in range(self._n):
+                    alpha[t+1,i] = self._b[i,seq[t+1]] * np.sum(alpha[t,:]*self._a[:,i])
         else:
-            alpha[0,:] = self._pi[:]
-        # induction step:
-        for t in range(T-1):
-            if avail[t+1]:
-                for i in range(self._n):
-                    alpha[t+1,i] = \
-                        self._b[i,seq[t+1]] * np.sum(alpha[t,:]*self._a[:,i])
+            # initialization step:
+            if avail[0]:
+                alpha[0,:] = self._pi * self._b[:,seq[0]]
             else:
-                for i in range(self._n):
-                    alpha[t+1,i] = np.sum(alpha[t,:] * self._a[:,i])
+                alpha[0,:] = self._pi
+            # induction step:
+            for t in range(T-1):
+                if avail[t+1]:
+                    for i in range(self._n):
+                        alpha[t+1,i] = self._b[i,seq[t+1]] * np.sum(alpha[t,:]*self._a[:,i])
+                else:
+                    for i in range(self._n):
+                        alpha[t+1,i] = np.sum(alpha[t,:] * self._a[:,i])
         # termination:
         likelihood = np.sum(alpha[-1,:])
-        return likelihood, alpha[:,:]
+        return likelihood, alpha
     
     def calc_likelihood_noscale(self, seqs, avails=None):
         """ calculate average likelihood that all the sequences
@@ -139,7 +143,7 @@ class DHMM:
         T = seq.size
         # initialization step:
         log_alpha = np.empty((T, self._n))
-        log_alpha[0, :] = np.log(self._pi[:] * self._b[:,seq[0]])
+        log_alpha[0, :] = np.log(self._pi * self._b[:,seq[0]])
         # induction step:
         for t in range(T-1):
             # for each state calc forward variable
@@ -152,7 +156,7 @@ class DHMM:
                 log_alpha[t+1,i] = max_log_temp + \
                     np.log(np.sum(np.exp(log_temps[:]-max_log_temp)))
         # termination: apply exp() since we calculated logarithms
-        alpha = np.exp(log_alpha[:,:])
+        alpha = np.exp(log_alpha)
         likelihood = np.sum(alpha[T-1,:])
         return likelihood, alpha
     
@@ -165,13 +169,12 @@ class DHMM:
         """
         T = seq.size
         sc_alpha = np.empty(shape=(T, self._n))
-        alpha_pr = np.empty(self._n) # from previous step
         alpha = np.empty(self._n)
         c = np.empty(T)
         # initialization
-        alpha_pr[:] = self._pi[:] * self._b[:,seq[0]]
-        c[0] = 1.0 / np.sum(alpha_pr[:])
-        sc_alpha[0,:] = alpha_pr[:] * c[0]
+        alpha_pr = self._pi * self._b[:,seq[0]]
+        c[0] = 1.0 / np.sum(alpha_pr)
+        sc_alpha[0,:] = alpha_pr * c[0]
         # induction
         for t in range(T-1):
             # TODO: optimize
@@ -179,39 +182,39 @@ class DHMM:
                 alpha[i] = \
                     self._b[i,seq[t+1]] * np.sum(sc_alpha[t,:]*self._a[:,i])
             c[t+1] = 1.0 / np.sum(alpha[:])
-            sc_alpha[t+1,:] = c[t+1] * alpha[:]
+            sc_alpha[t+1,:] = c[t+1] * alpha
             alpha_pr = np.array(alpha)
         # termination:
-        loglikelihood = -np.sum(np.log(c[:]))
-        return loglikelihood, sc_alpha[:,:], c[:]
+        loglikelihood = -np.sum(np.log(c))
+        return loglikelihood, sc_alpha, c
     
     def _calc_backward_noscale(self, seq, avail=None):
         """ Calc backward variables given the model and sequence
         seq -- sequence of observations, array(T)
         return -- beta: array(T, n) of backward variables
         """
-        # if avail is not defined consider that all observations are available
-        if avail is None:
-            avail = np.full(seq.size, fill_value=True)
         T = seq.size
         beta = np.empty(shape=(T, self._n))
         # initialization
         beta[-1, :] = 1.0
         # induction
-        for t in reversed(range(T-1)):
-            if avail[t+1]:
-                # TODO: optimize
-                #beta[t,:] = np.sum(np.prod(self._a[:,:] * self._b[:,seq[t+1]], axis=1) * beta[t+1,:], axis=0)
+        if avail is None:
+            # TODO: optimize
+            for t in reversed(range(T-1)):
                 for i in range(self._n):
-                    beta[t,i] = \
-                        np.sum(self._a[i,:] * self._b[:,seq[t+1]] * beta[t+1,:])
-            else:
-                # TODO: optimize
-                for i in range(self._n):
-                    beta[t,i] = np.sum(self._a[i,:] * beta[t+1,:])
-        # likelihood  
-        #print "beta likelihood" + str(np.sum(beta[0,:]*self._b[:,seq[0]]))
-        return beta[:,:]
+                    beta[t,i] = np.sum(self._a[i,:] * self._b[:,seq[t+1]] * beta[t+1,:])
+        else:
+            for t in reversed(range(T-1)):
+                if avail[t+1]:
+                    # TODO: optimize
+                    for i in range(self._n):
+                        beta[t,i] = np.sum(self._a[i,:] * self._b[:,seq[t+1]] * beta[t+1,:])
+                else:
+                    # TODO: optimize
+                    for i in range(self._n):
+                        beta[t,i] = np.sum(self._a[i,:] * beta[t+1,:])
+        # likelihood
+        return beta
         
     def _calc_backward_scaled(self, seq, c):
         """ Calc backward variables using standard scaling procedure
@@ -221,17 +224,16 @@ class DHMM:
         """
         T = seq.size
         sc_beta = np.empty(shape=(T, self._n))
-        beta_pr = np.empty(self._n) # from previous step
         beta = np.empty(self._n)
         # initialization
-        beta_pr[:] = 1.0
-        sc_beta[-1, :] = c[-1] * beta_pr[:]
+        beta_pr = np.full(self._n, 1.0) # from previous step
+        sc_beta[-1, :] = c[-1] * beta_pr
         # induction
         for t in reversed(range(T-1)):
             for i in range(self._n):
                 beta[i] = \
                     np.sum(self._a[i,:] * self._b[:,seq[t+1]]  * sc_beta[t+1,:])
-            sc_beta[t, :] = c[t] * beta[:]
+            sc_beta[t, :] = c[t] * beta
             beta_pr = np.array(beta)
         # TODO: return also the likelihood
         return sc_beta
@@ -261,7 +263,7 @@ class DHMM:
                 else:
                     for i in range(self._n):
                         xi[t,i,:] = alpha[t,i] * self._a[i,:] * beta[t+1,:]
-        xi[:,:,:] /= p
+        xi /= p
         return xi
     
     def _calc_gamma_noscale(self, alpha, beta, p, xi=None):
@@ -277,11 +279,11 @@ class DHMM:
         T = alpha.shape[0]
         gamma = np.empty(shape=(T,self._n))
         if xi is not None:
-            gamma[:-1, :] = np.sum(xi[:,:,:], axis=2)
+            gamma[:-1, :] = np.sum(xi, axis=2)
             gamma[-1, :] = alpha[-1, :] * beta[-1, :] / p
         else:
-            gamma[:, :] = alpha[:, :] * beta[:, :] / p
-        return gamma[:, :]
+            gamma = alpha * beta / p
+        return gamma
         
     def train_baumwelch_noscale(self, seqs, rtol, max_iter, avails = None):
         """ Train a HMM given a training sequence & an initial approximation 
@@ -313,26 +315,26 @@ class DHMM:
                 xi = self._calc_xi_noscale(seq, alpha, beta, p, avail)
                 gamma = self._calc_gamma_noscale(alpha, beta, p, xi)
                 # accumulating for maximization
-                pi_up[:] += gamma[0,:]                
-                a_up[:,:] += np.sum(xi[:,:,:], axis=0)
+                pi_up += gamma[0,:]                
+                a_up += np.sum(xi, axis=0)
                 temp = np.sum(gamma[:-1,:], axis=0)
-                a_down[:] += temp
+                a_down += temp
                 if avails is None:
                     # sum all gammas where observation is symbol m  
                     for m in range(self._m):
-                        b_up[:,m] += np.sum(gamma[seq[:]==m,:], axis=0)
-                    b_down[:] += temp + gamma[-1,:]
+                        b_up[:,m] += np.sum(gamma[seq==m,:], axis=0)
+                    b_down += temp + gamma[-1,:]
                 else:
                     # sum all gammas where observation is avail and is symbol m                  
                     for m in range(self._m):
-                        condition = (seq[:]==m) & (avail[:])
+                        condition = (seq==m) & (avail)
                         b_up[:,m] += np.sum(gamma[condition,:], axis=0)
                     # sum all gammas where observation is availiable
-                    b_down[:] += np.sum(gamma[avail[:],:], axis=0)
+                    b_down += np.sum(gamma[avail,:], axis=0)
             # re-estimation
-            self._pi[:] = pi_up[:] / K
-            self._a[:,:] = (a_up[:,:].T / a_down[:]).T
-            self._b[:,:] = (b_up[:,:].T / b_down[:]).T
+            self._pi = pi_up / K
+            self._a = (a_up.T / a_down).T
+            self._b = (b_up.T / b_down).T
             iteration += 1
         # TODO: what if various length?
         likelihood = self.calc_likelihood_noscale(seqs, avails)
@@ -351,8 +353,7 @@ class DHMM:
         if isScale:
             raise NotImplementedError, "Scaled baum-welch is not impl. yet"
         else:
-            likelihood, iteration = \
-                self.train_baumwelch_noscale(seqs_glued, rtol, max_iter)
+            likelihood, iteration = self.train_baumwelch_noscale(seqs_glued, rtol, max_iter)
         return likelihood, iteration
         
     def train_baumwelch_multiseq(self, seqs, rtol, max_iter, avails,
@@ -401,7 +402,7 @@ class DHMM:
             states_decoded = self.decode_viterbi(seqs, avails)
             seqs_imputed = self.impute_by_states(seqs, avails, states_decoded) # TODO:
             # TODO: need this?            
-            # self = copy.deepcopy(hmm0)
+            #self = copy.deepcopy(hmm0)
             p, it = self.train_baumwelch_noscale(seqs_imputed, rtol, max_iter)
         return p, it
         
@@ -505,14 +506,11 @@ def choose_best_hmm_using_bauwelch(seqs, hmms0_size, n, m, algorithm='marginaliz
             raise NotImplementedError, "Scaled baum-welch is not impl. yet"
         else:
             if algorithm == 'marginalization':
-                p, iteration = \
-                    hmm0.train_baumwelch_noscale(seqs, rtol, max_iter, avails)
+                p, iteration = hmm0.train_baumwelch_noscale(seqs, rtol, max_iter, avails)
             if algorithm == 'gluing':
-                p, iteration = \
-                    hmm0.train_baumwelch_gluing(seqs, rtol, max_iter, avails)
+                p, iteration = hmm0.train_baumwelch_gluing(seqs, rtol, max_iter, avails)
             if algorithm == 'viterbi':
-                p, iteration = \
-                    hmm0.train_bauwelch_impute(seqs, rtol, max_iter, avails)
+                p, iteration = hmm0.train_bauwelch_impute(seqs, rtol, max_iter, avails)
         if (p_max < p and np.isfinite(p)):
             hmm_best = copy.deepcopy(hmm0)
             p_max = p
