@@ -522,8 +522,8 @@ def choose_best_hmm_using_bauwelch(seqs, hmms0_size, n, m, algorithm='marginaliz
             print hmm0._pi
             print hmm0._a
             print hmm0._b
-    if hmm_best is None:
-        raise Exception("Models from all initial approximations were estimated incorrectly")
+    #if hmm_best is None:
+    #    raise Exception("Models from all initial approximations were estimated incorrectly")
     return hmm_best, iter_max
 
 def _generate_discrete_distribution(n):
