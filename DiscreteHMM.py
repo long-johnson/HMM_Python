@@ -96,13 +96,14 @@ class DHMM:
         """
         T = seq.size
         alpha = np.empty((T, self._n))
+        # TODO: storage _a matrix already in transposed form
+        a_T = np.transpose(self._a)
         if avail is None:
             # initialization step:
             alpha[0,:] = self._pi * self._b[:,seq[0]]
             # induction step:
             for t in range(T-1):
-                for i in range(self._n):
-                    alpha[t+1,i] = self._b[i,seq[t+1]] * np.sum(alpha[t,:]*self._a[:,i])
+                alpha[t+1,:] = self._b[:,seq[t+1]] * np.sum(alpha[t,:]*a_T, axis=1)
         else:
             # initialization step:
             if avail[0]:
@@ -112,11 +113,9 @@ class DHMM:
             # induction step:
             for t in range(T-1):
                 if avail[t+1]:
-                    for i in range(self._n):
-                        alpha[t+1,i] = self._b[i,seq[t+1]] * np.sum(alpha[t,:]*self._a[:,i])
+                    alpha[t+1,:] = self._b[:,seq[t+1]] * np.sum(alpha[t,:]*a_T, axis=1)
                 else:
-                    for i in range(self._n):
-                        alpha[t+1,i] = np.sum(alpha[t,:] * self._a[:,i])
+                    alpha[t+1,:] = np.sum(alpha[t,:]*a_T, axis=1)
         # termination:
         likelihood = np.sum(alpha[-1,:])
         return likelihood, alpha
@@ -133,6 +132,7 @@ class DHMM:
             return np.sum([self._calc_forward_noscale(seqs[k], avails[k])[0] \
                            for k in range(len(seqs))])
     
+    #TODO: not optimized
     def _calc_forward_logsumexp(self, seq):
         # TODO: needs to be thought through more carefully
         """ calculate forward variables (log-sum-exp trick)
@@ -149,8 +149,7 @@ class DHMM:
             # for each state calc forward variable
             for i in range(self._n):
                 # calc values under exponent
-                log_temps = np.log(self._b[:,seq[t+1]]) + \
-                    np.log(self._a[:,i]) + log_alpha[t,:]
+                log_temps = np.log(self._b[:,seq[t+1]]) + np.log(self._a[:,i]) + log_alpha[t,:]
                 max_log_temp = np.max(log_temps)
                 # apply log-sum-exp trick
                 log_alpha[t+1,i] = max_log_temp + \
@@ -160,6 +159,7 @@ class DHMM:
         likelihood = np.sum(alpha[T-1,:])
         return likelihood, alpha
     
+    #TODO: not optimized
     def _calc_forward_scaled(self, seq):
         """ calculate forward variables (scaled)
         seq -- sequence of observations, array(T)
@@ -199,23 +199,18 @@ class DHMM:
         beta[-1, :] = 1.0
         # induction
         if avail is None:
-            # TODO: optimize
             for t in reversed(range(T-1)):
-                for i in range(self._n):
-                    beta[t,i] = np.sum(self._a[i,:] * self._b[:,seq[t+1]] * beta[t+1,:])
+                beta[t,:] = np.sum(self._a * self._b[:,seq[t+1]] * beta[t+1,:], axis=1)
         else:
             for t in reversed(range(T-1)):
                 if avail[t+1]:
-                    # TODO: optimize
-                    for i in range(self._n):
-                        beta[t,i] = np.sum(self._a[i,:] * self._b[:,seq[t+1]] * beta[t+1,:])
+                    beta[t,:] = np.sum(self._a * self._b[:,seq[t+1]] * beta[t+1,:], axis=1)
                 else:
-                    # TODO: optimize
-                    for i in range(self._n):
-                        beta[t,i] = np.sum(self._a[i,:] * beta[t+1,:])
+                    beta[t,:] = np.sum(self._a * beta[t+1,:], axis=1)
         # likelihood
         return beta
         
+    # TODO: not optimized
     def _calc_backward_scaled(self, seq, c):
         """ Calc backward variables using standard scaling procedure
         seq -- sequence of observations, array(T)
@@ -249,20 +244,16 @@ class DHMM:
         """
         T = seq.size
         xi = np.empty(shape=(T-1, self._n, self._n))
+        a_tr = np.transpose(self._a)
         if avail is None:
-            for t in range(T-1):
-                for i in range(self._n):                    
-                    xi[t,i,:] = \
-                        alpha[t,i] * self._a[i,:] * self._b[:,seq[t+1]] * beta[t+1,:]
+            for t in range(T-1):                  
+                xi[t,:,:] = (alpha[t,:] * a_tr).T * self._b[:,seq[t+1]] * beta[t+1,:]
         else:
             for t in range(T-1):
-                if avail[t+1]:
-                    for i in range(self._n):                    
-                        xi[t,i,:] = alpha[t,i] * self._a[i,:] * \
-                                    self._b[:,seq[t+1]] * beta[t+1,:]
+                if avail[t+1]:                  
+                    xi[t,:,:] = (alpha[t,:] * a_tr).T * self._b[:,seq[t+1]] * beta[t+1,:]
                 else:
-                    for i in range(self._n):
-                        xi[t,i,:] = alpha[t,i] * self._a[i,:] * beta[t+1,:]
+                    xi[t,:,:] = (alpha[t,:] * a_tr).T * beta[t+1,:]
         xi /= p
         return xi
     
@@ -336,7 +327,6 @@ class DHMM:
             self._a = (a_up.T / a_down).T
             self._b = (b_up.T / b_down).T
             iteration += 1
-        # TODO: what if various length?
         likelihood = self.calc_likelihood_noscale(seqs, avails)
         return likelihood, iteration
         
@@ -401,8 +391,7 @@ class DHMM:
             hmm0 = copy.deepcopy(self)
             self.train_baumwelch_noscale(seqs, rtol, max_iter, avails)
             states_decoded = self.decode_viterbi(seqs, avails)
-            seqs_imputed = self.impute_by_states(seqs, avails, states_decoded) # TODO:
-            # TODO: need this?            
+            seqs_imputed = self.impute_by_states(seqs, avails, states_decoded)
             self = copy.deepcopy(hmm0)
             p, it = self.train_baumwelch_noscale(seqs_imputed, rtol, max_iter)
         return p, it
