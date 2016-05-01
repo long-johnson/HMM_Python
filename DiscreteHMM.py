@@ -3,6 +3,7 @@
 import numpy as np
 from scipy import stats
 import copy
+import StandardImputationMethods as imp
 
 class DHMM:
     
@@ -395,6 +396,26 @@ class DHMM:
             self = copy.deepcopy(hmm0)
             p, it = self.train_baumwelch_noscale(seqs_imputed, rtol, max_iter)
         return p, it
+    
+    def train_bauwelch_impute_mode(self, seqs, rtol, max_iter, avails, isScale=False,
+                                   params=None):
+        """ Train HMM with Baum-Welch by restoring gaps using mode imputation
+        params: list of one value -- number of neighbours
+        return -- likelihood, iteration
+        """
+        if isScale:
+            raise NotImplementedError, "Scaled baum-welch is not impl. yet"
+        if params is not None:
+            n_neighbours = params[0]
+        else:
+            n_neighbours=10
+        seqs_imp, avails_imp = imp.impute_by_n_neighbours(seqs, avails, n_neighbours,
+                                              is_middle=True, method="mode",
+                                              n_of_symbols=self._m)
+        seqs_imp = imp.impute_by_whole_seq(seqs_imp, avails_imp, method='mode',
+                                           n_of_symbols=self._m)
+        p, it = self.train_baumwelch_noscale(seqs_imp, rtol, max_iter)
+        return p, it
         
     def decode_viterbi(self, seqs, avails=None):
         """ Scaled multisequence version
@@ -476,7 +497,7 @@ def choose_best_hmm_using_bauwelch(seqs, hmms0_size, n, m, algorithm='marginaliz
     max_iter -- (stopping criterion)
     return: hmm_best, iter_max
     """
-    assert algorithm in ('marginalization', 'gluing', 'viterbi'),\
+    assert algorithm in ('marginalization', 'gluing', 'viterbi', 'mode'),\
         "Invalid algorithm '{}'".format(algorithm)
     # generate approximations if not given any
     if hmms0 is None:
@@ -501,6 +522,8 @@ def choose_best_hmm_using_bauwelch(seqs, hmms0_size, n, m, algorithm='marginaliz
                 p, iteration = hmm0.train_baumwelch_gluing(seqs, rtol, max_iter, avails)
             if algorithm == 'viterbi':
                 p, iteration = hmm0.train_bauwelch_impute(seqs, rtol, max_iter, avails)
+            if algorithm == 'mode':
+                p, iteration = hmm0.train_bauwelch_impute_mode(seqs, rtol, max_iter, avails)
         if (p_max < p and np.isfinite(p)):
             hmm_best = copy.deepcopy(hmm0)
             p_max = p

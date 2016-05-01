@@ -4,7 +4,7 @@ import copy
 import numpy as np
 
 # TODO: more universal mode
-def impute_by_n_neighbours(seqs, avails, n, is_middle=True, method="avg",
+def impute_by_n_neighbours(seqs, avails, n, is_middle=True, method='avg',
                            n_of_symbols=2):
     """ Impute missing values (imp) by values of its neighbours
     method -- "average": imp = avg of n neighbours
@@ -13,6 +13,7 @@ def impute_by_n_neighbours(seqs, avails, n, is_middle=True, method="avg",
     is_middle -- true: take ceil(n/2) next and ceil(n/2) prev values
                  false: take n previous values
     """
+    assert method in ('avg', 'mode'), "Invalid method '{}'".format(mode)
     K = len(seqs)
     seqs_imp = []
     avails_imp = []
@@ -48,9 +49,9 @@ def _impute_by_n_neighbours(seq, avail, n_, is_middle, method, n_of_symbols):
             # if no neigbours availiable
             if n_of_avl == 0:
                 continue
-            if method == "avg":
+            if method == 'avg':
                 imp = 1.0 * np.sum((seq_imp[l_b:r_b])[avl]) / n_of_avl
-            if method == "mode":
+            if method == 'mode':
                 imp = np.argmax(np.histogram((seq_imp[l_b:r_b])[avl],\
                       bins=np.arange(n_of_symbols+1))[0])
             seq_imp[t] = imp
@@ -69,7 +70,7 @@ def impute_by_whole_seq(seqs, avails, method="avg", n_of_symbols=2):
     for k in range(K):
         seq_imp = np.array(seqs[k])
         avail = avails[k]
-        if method == "avg":
+        if method == 'avg':
             imp = np.sum(seq_imp[avail]) / np.count_nonzero(avail)
         else:
             imp = np.argmax(np.histogram(seq_imp[avail],\
