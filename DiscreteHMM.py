@@ -182,7 +182,7 @@ class DHMM:
             for i in range(self._n):
                 alpha[i] = \
                     self._b[i,seq[t+1]] * np.sum(sc_alpha[t,:]*self._a[:,i])
-            c[t+1] = 1.0 / np.sum(alpha[:])
+            c[t+1] = 1.0 / np.sum(alpha[:]) #???
             sc_alpha[t+1,:] = c[t+1] * alpha
             alpha_pr = np.array(alpha)
         # termination:
