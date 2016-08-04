@@ -229,6 +229,67 @@ class GHMM:
             beta[t,:] = c[t] * beta_t
         return beta
         
+    def _calc_xi_scaled(self, seq, b, alpha, beta):
+        """ Calc xi(t,i,j), t=1..T, i,j=1..N - array of probabilities of
+        being in state i and go to state j in time t given the model and seq
+        
+        Parameters
+        ----------
+        
+        seq : 2darray (TxZ)
+            sequence of observations
+        b : 2darray (T x N)
+            conditional densities for each sequence element and HMM state
+        alpha : 2darray (TxN)
+            forward variables
+        beta : 2darray (TxN)
+            backward variables
+            
+        Returns
+        -------
+        
+        xi : 3darray (TxNxN)
+            probs of transition from i to j at time t given the model and seq
+        """
+        T = seq.shape[0]
+        N = self._n
+        xi = np.empty(shape=(T-1, N, N))
+        a_tr = np.transpose(self._a)
+        # TODO: optimize, but how?
+        for t in range(T-1):                  
+            xi[t,:,:] = (alpha[t,:] * a_tr).T * self._b[t+1,:] * beta[t+1,:]
+        return xi
+        
+    def _calc_gamma_scaled(self, seq, alpha, beta, c, xi):
+        """ Calc gamma(t,i), t=1..T, i=1..N -- array of probabilities of
+        being in state i at the time t given the model and sequence
+        
+        Parameters
+        ----------
+        seq : 2darray (TxZ)
+            sequence of observations 
+        alpha : 2darray (TxN)
+            forward variables
+        beta : 2darray (TxN)
+            backward variables
+        c : 1darray (T)
+            scaling coefficients
+        xi : 3darray (TxNxN)
+            probs of transition from i to j at time t given the model and seq
+            
+        Returns
+        -------
+        
+        gamma : 2darray (TxN)
+            probs of transition from i at time t given the model and seq
+        """
+        T = alpha.shape[0]
+        N = self._n
+        gamma = np.empty(shape=(T,N))
+        gamma[:-1, :] = np.sum(xi, axis=2)
+        gamma[-1, :] = alpha[-1, :] * beta[-1, :] / c[-1]
+        return gamma
+  
 def _generate_discrete_distribution(n):
     """ Generate n values > 0.0, whose sum equals 1.0
     """
