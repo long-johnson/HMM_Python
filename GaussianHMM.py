@@ -289,7 +289,42 @@ class GHMM:
         gamma[:-1, :] = np.sum(xi, axis=2)
         gamma[-1, :] = alpha[-1, :] * beta[-1, :] / c[-1]
         return gamma
-  
+     
+    def _calc_gamma_m_scaled(self, seq, b, gamma):
+        """ Calc gamma_m(t,i,m), t=1..T, i=1..N, m=1..M -- array of probs
+        of being in state i at time t and selecting m-th mixture component
+        
+        Parameters
+        ----------
+        seq : 2darray (TxZ)
+            sequence of observations
+        b : 2darray (T x N)
+            conditional densities for each sequence element and HMM state
+        gamma : 2darray (TxN)
+            probs of transition from i at time t given the model and seq
+            
+        Returns
+        -------
+        gamma : 3darray (TxNxM)
+            probs of transition from i at time t and selection of m-th mixture
+        """
+        N = self._n
+        M = self._m
+        T = seq.shape[0]       
+        mu = self._mu
+        sig = self._sig
+        tau = self._tau
+        gamma_m = np.empty(shape=(T, N, M))
+        # TODO: optimize, move pdf calculations to other routine
+        # TODO: and then replace the inner loop
+        for t in range(T):
+            for i in range(N):
+                for m in range(M):
+                    gamma_m[t,i,m] = \
+                        sp.stats.multivariate_normal.pdf(seq[t], mu[i,m], sig[i,m])\
+                        * tau[i,m] * gamma[t,i] / b[t,i]
+        return gamma_m
+   
 def _generate_discrete_distribution(n):
     """ Generate n values > 0.0, whose sum equals 1.0
     """
