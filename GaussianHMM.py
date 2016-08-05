@@ -21,7 +21,7 @@ class GHMM:
         a - transition probabilities matrix (n x n)
         tau - weights of mixture distributions (n x m)
         mu - means of normal distributions (n x m x z)
-        sig - covariations of normal distributions (diagonal elements) (n x m x z)
+        sig - covariation matrix of normal distributions (n x m x z x z)
         
         seed - provide seed if HMM needs to be generated randomly (not evenly)
         """
@@ -305,7 +305,7 @@ class GHMM:
             
         Returns
         -------
-        gamma : 3darray (TxNxM)
+        gamma_m : 3darray (TxNxM)
             probs of transition from i at time t and selection of m-th mixture
         """
         N = self._n
@@ -324,7 +324,66 @@ class GHMM:
                         sp.stats.multivariate_normal.pdf(seq[t], mu[i,m], sig[i,m])\
                         * tau[i,m] * gamma[t,i] / b[t,i]
         return gamma_m
-   
+    
+    def train_baumwelch(self, seqs, rtol, max_iter):
+        N = self._n
+        M = self._m
+        Z = self._z
+        K = len(seqs)
+        T = max([len(seq) for seq in seqs]) # for gamma_ms
+        iteration = 0
+        p_prev = -100.0 # likelihood on previous iteration
+        p = 100.0       # likelihood on cur iteration
+        while np.abs(p_prev-p)/p > rtol and iteration < max_iter:
+            p_prev = p
+            # calculate numenator and denominator for re-estimation
+            pi_up = np.zeros(N)
+            a_up = np.zeros((N, N))
+            tau_up = np.zeros((N, M))
+            a_tau_down = np.zeros(N)
+            mu_up = np.zeros((N, M, Z))
+            mu_sig_down = np.zeros((N, M))
+            gamma_ms = np.zeros((K,T,N,M))
+            sig_up = np.zeros((N, M, Z, Z))
+            for k in range(K):   
+                # expectation
+                seq = seqs[k]
+                b = self._calc_b(seq)
+                p, alpha, c = self._calc_forward_scaled(seq, b)
+                beta = self._calc_backward_scaled(seq, b, c)
+                xi = self._calc_xi_scaled(seq, b, alpha, beta)
+                gamma = self._calc_gamma_scaled(seq, alpha, beta, c, xi)
+                gamma_ms[k] = self._calc_gamma_m_scaled(seq, b, gamma)
+                # accumulating for maximization
+                pi_up += gamma[0,:]
+                a_up += np.sum(xi, axis=0)
+                sum_gamma = np.sum(gamma[:-1,:], axis=0)                
+                tau_up += np.sum(gamma_ms[k], axis=0)
+                a_tau_down += sum_gamma
+                mu_up += np.einsum('tnm,tz->nmz', gamma_ms[k], seq) # TODO: will it work??
+                mu_sig_down += np.sum(gamma_ms[k], axis=0)
+            # re-estimation
+            self._pi = pi_up / K
+            self._a = (a_up.T / a_tau_down).T
+            self._tau = (tau_up.T / a_tau_down).T
+            self._mu = mu_up / mu_sig_down[:,:,np.newaxis] # TODO: take care of axes
+            # accumulating sig
+            # TODO: how to optimize this ..?
+            for k in range(K):
+                seq = seqs[k]
+                T = seq.shape[0]
+                for t in range(T):
+                    diff = self._mu - seq[t]
+                    for i in N:
+                        for m in M:
+                            sig_up[i,m] += gamma_ms[k,t,i,m] * \
+                                           np.outer(diff[i,m],diff[i,m])
+            # sig re-estimation
+            self._sig = sig_up / mu_sig_down[:,:,np.newaxis,np.newaxis] # TODO: take care of axes
+            iteration += 1
+        likelihood = self.calc_likelihood(seqs)
+        return likelihood, iteration
+        
 def _generate_discrete_distribution(n):
     """ Generate n values > 0.0, whose sum equals 1.0
     """
