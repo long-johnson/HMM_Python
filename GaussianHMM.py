@@ -89,7 +89,7 @@ class GHMM:
             state = _get_sample_discrete_distr(self._pi)
             state_seqs[k][0] = state
             mix_elem = _get_sample_discrete_distr(self._tau[state,:])
-            cov_matrix = np.diag(self._sig[state, mix_elem])
+            cov_matrix = self._sig[state, mix_elem]
             seqs[k][0] = \
                 np.random.multivariate_normal(self._mu[state, mix_elem],
                                               cov_matrix)
@@ -97,7 +97,7 @@ class GHMM:
                 state = _get_sample_discrete_distr(self._a[state,:])
                 state_seqs[k][t] = state
                 mix_elem = _get_sample_discrete_distr(self._tau[state,:])
-                cov_matrix = np.diag(self._sig[state, mix_elem])
+                cov_matrix = self._sig[state, mix_elem]
                 seqs[k][t] = \
                     np.random.multivariate_normal(self._mu[state, mix_elem],
                                                   cov_matrix)
