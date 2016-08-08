@@ -147,7 +147,7 @@ class GHMM:
         # TODO: optimize, remove inner loop
         # TODO: optimize, move pdf calculations to other routine
         for t in range(T):
-            for i in range(self._n):
+            for i in range(N):
                 b[t, i] = sum([tau[i,m] * \
                     sp.stats.multivariate_normal.pdf(seq[t], mu[i,m], sig[i,m])\
                     for m in range(M)])    
@@ -187,8 +187,8 @@ class GHMM:
         # induction
         for t in range(T-1):
             # TODO: optimize
-            for i in range(N):
-                alpha_t[i] = b[t+1,i] * np.sum(alpha[t,:]*a[:,i])
+            for j in range(N):
+                alpha_t[j] = b[t+1,j] * np.sum(alpha[t,:]*a[:,j])
             c[t+1] = 1.0 / np.sum(alpha_t)
             alpha[t+1,:] = c[t+1] * alpha_t
         # termination:
@@ -229,9 +229,11 @@ class GHMM:
             beta[t,:] = c[t] * beta_t
         return beta
         
-    def _calc_xi_scaled(self, seq, b, alpha, beta):
+    def _calc_xi_gamma_scaled(self, seq, b, alpha, beta):
         """ Calc xi(t,i,j), t=1..T, i,j=1..N - array of probabilities of
         being in state i and go to state j in time t given the model and seq
+        Calc gamma(t,i), t=1..T, i=1..N -- array of probabilities of
+        being in state i at the time t given the model and sequence
         
         Parameters
         ----------
@@ -250,6 +252,8 @@ class GHMM:
         
         xi : 3darray (TxNxN)
             probs of transition from i to j at time t given the model and seq
+        gamma : 2darray (TxN)
+            probs of transition from i at time t given the model and seq
         """
         T = seq.shape[0]
         N = self._n
@@ -257,38 +261,9 @@ class GHMM:
         a_tr = np.transpose(self._a)
         # TODO: optimize, but how?
         for t in range(T-1):                  
-            xi[t,:,:] = (alpha[t,:] * a_tr).T * self._b[t+1,:] * beta[t+1,:]
-        return xi
-        
-    def _calc_gamma_scaled(self, seq, alpha, beta, c, xi):
-        """ Calc gamma(t,i), t=1..T, i=1..N -- array of probabilities of
-        being in state i at the time t given the model and sequence
-        
-        Parameters
-        ----------
-        seq : 2darray (TxZ)
-            sequence of observations 
-        alpha : 2darray (TxN)
-            forward variables
-        beta : 2darray (TxN)
-            backward variables
-        c : 1darray (T)
-            scaling coefficients
-        xi : 3darray (TxNxN)
-            probs of transition from i to j at time t given the model and seq
-            
-        Returns
-        -------
-        
-        gamma : 2darray (TxN)
-            probs of transition from i at time t given the model and seq
-        """
-        T = alpha.shape[0]
-        N = self._n
-        gamma = np.empty(shape=(T,N))
-        gamma[:-1, :] = np.sum(xi, axis=2)
-        gamma[-1, :] = alpha[-1, :] * beta[-1, :] / c[-1]
-        return gamma
+            xi[t,:,:] = (alpha[t,:] * a_tr).T * b[t+1,:] * beta[t+1,:]
+        gamma = np.sum(xi, axis=2)
+        return xi, gamma
      
     def _calc_gamma_m_scaled(self, seq, b, gamma):
         """ Calc gamma_m(t,i,m), t=1..T, i=1..N, m=1..M -- array of probs
@@ -314,10 +289,10 @@ class GHMM:
         mu = self._mu
         sig = self._sig
         tau = self._tau
-        gamma_m = np.empty(shape=(T, N, M))
-        # TODO: optimize, move pdf calculations to other routine
+        gamma_m = np.empty(shape=(T-1, N, M))
+        # TODO: optimize, move pdf calculations to another routine
         # TODO: and then replace the inner loop
-        for t in range(T):
+        for t in range(T-1):
             for i in range(N):
                 for m in range(M):
                     gamma_m[t,i,m] = \
@@ -334,7 +309,7 @@ class GHMM:
         iteration = 0
         p_prev = -100.0 # likelihood on previous iteration
         p = 100.0       # likelihood on cur iteration
-        while np.abs(p_prev-p)/p > rtol and iteration < max_iter:
+        while np.abs((p_prev-p)/p) > rtol and iteration < max_iter:
             p_prev = p
             # calculate numenator and denominator for re-estimation
             pi_up = np.zeros(N)
@@ -343,7 +318,7 @@ class GHMM:
             a_tau_down = np.zeros(N)
             mu_up = np.zeros((N, M, Z))
             mu_sig_down = np.zeros((N, M))
-            gamma_ms = np.zeros((K,T,N,M))
+            gamma_ms = np.zeros((K,T-1,N,M))
             sig_up = np.zeros((N, M, Z, Z))
             for k in range(K):   
                 # expectation
@@ -351,35 +326,34 @@ class GHMM:
                 b = self._calc_b(seq)
                 p, alpha, c = self._calc_forward_scaled(seq, b)
                 beta = self._calc_backward_scaled(seq, b, c)
-                xi = self._calc_xi_scaled(seq, b, alpha, beta)
-                gamma = self._calc_gamma_scaled(seq, alpha, beta, c, xi)
+                xi, gamma = self._calc_xi_gamma_scaled(seq, b, alpha, beta)
                 gamma_ms[k] = self._calc_gamma_m_scaled(seq, b, gamma)
                 # accumulating for maximization
                 pi_up += gamma[0,:]
                 a_up += np.sum(xi, axis=0)
-                sum_gamma = np.sum(gamma[:-1,:], axis=0)                
+                sum_gamma = np.sum(gamma, axis=0)                
                 tau_up += np.sum(gamma_ms[k], axis=0)
                 a_tau_down += sum_gamma
-                mu_up += np.einsum('tnm,tz->nmz', gamma_ms[k], seq) # TODO: will it work??
+                mu_up += np.einsum('tnm,tz->nmz', gamma_ms[k], seq[:-1])
                 mu_sig_down += np.sum(gamma_ms[k], axis=0)
             # re-estimation
             self._pi = pi_up / K
             self._a = (a_up.T / a_tau_down).T
             self._tau = (tau_up.T / a_tau_down).T
-            self._mu = mu_up / mu_sig_down[:,:,np.newaxis] # TODO: take care of axes
+            self._mu = mu_up / mu_sig_down[:,:,np.newaxis]
             # accumulating sig
             # TODO: how to optimize this ..?
             for k in range(K):
                 seq = seqs[k]
                 T = seq.shape[0]
-                for t in range(T):
+                for t in range(T-1):
                     diff = self._mu - seq[t]
-                    for i in N:
-                        for m in M:
+                    for i in range(N):
+                        for m in range(M):
                             sig_up[i,m] += gamma_ms[k,t,i,m] * \
                                            np.outer(diff[i,m],diff[i,m])
             # sig re-estimation
-            self._sig = sig_up / mu_sig_down[:,:,np.newaxis,np.newaxis] # TODO: take care of axes
+            self._sig = sig_up / mu_sig_down[:,:,np.newaxis,np.newaxis]
             iteration += 1
         likelihood = self.calc_likelihood(seqs)
         return likelihood, iteration
