@@ -175,7 +175,6 @@ class GHMM:
         N = self._n
         T = seq.shape[0]       
         pi = self._pi
-        a = self._a
         # memory
         alpha = np.empty(shape=(T, N))
         c = np.empty(T)
@@ -184,10 +183,9 @@ class GHMM:
         c[0] = 1.0 / np.sum(alpha_t)
         alpha[0,:] = c[0] * alpha_t 
         # induction
+        a_T = np.transpose(self._a)
         for t in range(T-1):
-            # TODO: optimize
-            for j in range(N):
-                alpha_t[j] = b[t+1,j] * np.sum(alpha[t,:]*a[:,j])
+            alpha_t = b[t+1,:] * np.sum(alpha[t,:]*a_T, axis=1)
             c[t+1] = 1.0 / np.sum(alpha_t)
             alpha[t+1,:] = c[t+1] * alpha_t
         # termination:
@@ -222,9 +220,7 @@ class GHMM:
         beta[-1,:] = c[-1] * beta_t
         # induction
         for t in reversed(range(T-1)):
-            # TODO: optimize
-            for i in range(N):
-                beta_t[i] = np.sum(a[i,:] * b[t+1,:]  * beta[t+1,:])
+            beta_t = np.sum(a * b[t+1,:]  * beta[t+1,:], axis=1)
             beta[t,:] = c[t] * beta_t
         return beta
         
@@ -258,7 +254,6 @@ class GHMM:
         N = self._n
         xi = np.empty(shape=(T-1, N, N))
         a_tr = np.transpose(self._a)
-        # TODO: optimize, but how?
         for t in range(T-1):                  
             xi[t,:,:] = (alpha[t,:] * a_tr).T * b[t+1,:] * beta[t+1,:]
         gamma = np.sum(xi, axis=2)
@@ -289,11 +284,7 @@ class GHMM:
         T = seq.shape[0]       
         tau = self._tau
         gamma_m = np.empty(shape=(T-1, N, M))
-        # TODO: and then replace the inner loop
-        for t in range(T-1):
-            for i in range(N):
-                for m in range(M):
-                    gamma_m[t,i,m] = g[t,i,m] * tau[i,m] * gamma[t,i] / b[t,i]
+        gamma_m = g[:-1,:,:] * tau * gamma[:,:, np.newaxis] / b[:-1,:,np.newaxis]
         return gamma_m
     
     def train_baumwelch(self, seqs, rtol, max_iter):
@@ -338,7 +329,7 @@ class GHMM:
             self._tau = (tau_up.T / a_tau_down).T
             self._mu = mu_up / mu_sig_down[:,:,np.newaxis]
             # accumulating sig
-            # TODO: how to optimize this ..?
+            # TODO: is it possible to optimize this ...?
             for k in range(K):
                 seq = seqs[k]
                 T = seq.shape[0]
@@ -347,7 +338,8 @@ class GHMM:
                     for i in range(N):
                         for m in range(M):
                             sig_up[i,m] += gamma_ms[k,t,i,m] * \
-                                           np.outer(diff[i,m],diff[i,m])
+                                           diff[i,m] * (diff[i,m]).reshape((Z,1))
+                                           #instead of np.outer()
             # sig re-estimation
             self._sig = sig_up / mu_sig_down[:,:,np.newaxis,np.newaxis]
             iteration += 1
