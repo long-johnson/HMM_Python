@@ -345,6 +345,63 @@ class GHMM:
             iteration += 1
         likelihood = self.calc_likelihood(seqs)
         return likelihood, iteration
+
+def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, hmms0=None, rtol=1e-1, 
+                             max_iter=None, verbose=False):
+    """ Train several hmms using baumwelch algorithm and choose the best one
+    
+    Parameters
+    ----------
+    seqs : list of float64 2darrays (TxZ)
+        list of training sequences
+    hmms0_size : int
+        number of initial approximations
+    N : int
+        number of HMM states
+    M : int
+        number of HMM symbols
+    Z : int
+        dimensionality of observations
+    hmms0 : list of GHMMs, optional
+        list of initial approximations of HMM parameters
+        !note: len(hmms0) == hmms0_size must be fulfilled!
+        if not specified, hmms0_size approximations will be generated
+    rtol : float64, optional
+        relative tolerance (stopping criterion)
+    max_iter : float64, optional
+        maximal number of Baum-Welch iterations (stopping criterion)
+    verbose : bool, optional
+        controls whether some debug info should be printed to stdout
+    
+    Returns
+    -------
+    hmm_best : GHMM
+        best trained hmm or None
+    iter_best : float64
+        number of iterations to train the best hmm 
+    """
+    # TODO: generate approximations if not given any
+    # TODO: generate mu and sig according to seqs, but slightly random
+    # calc and choose the best hmm estimate
+    hmms = copy.deepcopy(hmms0)
+    p_max = np.finfo(np.float64).min # minimal value possible
+    hmm_best = None
+    iter_best = -1 # count number of iters for the best hmm
+    for hmm in hmms:
+        p, iteration = hmm.train_baumwelch(seqs, rtol, max_iter)
+        if (p_max < p and np.isfinite(p)):
+            hmm_best = hmm
+            p_max = p
+            iter_best = iteration
+        if verbose:
+            print "another approximation: p=" + str(p)
+            print "iteration = " + str(iteration)
+            print hmm._pi
+            print hmm._a
+            print hmm._tau
+            print hmm._mu
+            print hmm._sig
+    return hmm_best, iter_best
         
 def _generate_discrete_distribution(n):
     """ Generate n values > 0.0, whose sum equals 1.0
