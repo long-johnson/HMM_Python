@@ -402,6 +402,46 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, hmms0=None, rtol=1e-1,
             print hmm._mu
             print hmm._sig
     return hmm_best, iter_best
+
+def estimate_mu_sig(seqs, N, M, Z):
+    """ Estimate values of mu and sig basing on the sequences.
+        mu elements are uniformly scattered from min to max seq element
+        sig matrixes are diagonal scaled accordingly to min and max seq elements
+        
+        Parameters
+        ----------
+        seqs : list of 2darrays (TxZ)
+            list of training sequences
+        N : int
+            number of HMM states
+        M : int
+            number of distribution mixture components
+        Z : int
+            dimensionality of observations
+        
+        Returns
+        -------
+        mu : 3darray (NxMxZ)
+            means of normal distributions 
+        sig : 4darray (NxMxZxZ)
+            covariation matrix of normal distributions
+    """
+    # TODO: add more clever heuristics to this procedure
+    mu = np.empty((N*M,Z))
+    sig = np.empty((N,M,Z,Z))
+    min_val = np.min([np.min(seq, axis=0) for seq in seqs], axis=0)
+    max_val = np.max([np.max(seq, axis=0) for seq in seqs], axis=0)
+    step = (max_val - min_val) / (N*M)
+    val = min_val + step/2.0
+    for i in range(N*M):
+        mu[i] += val
+        val += step
+    mu = np.reshape(mu, newshape=(N,M,Z))
+    # TODO: scale sig matrixes
+    for i in range(N):
+        for j in range(M):
+            sig[i,j] = np.eye(Z)
+    return mu, sig
         
 def _generate_discrete_distribution(n):
     """ Generate n values > 0.0, whose sum equals 1.0
