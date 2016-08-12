@@ -442,7 +442,36 @@ def estimate_mu_sig(seqs, N, M, Z):
         for j in range(M):
             sig[i,j] = np.eye(Z)
     return mu, sig
-        
+
+def classify_seqs(seqs, hmms):
+    """ Label each seq from seqs with number of the hmm which suits seq better
+        'suits' i.e. has the biggest likelihood of generating tht sequence
+    
+    Parameters
+    ----------
+    seqs : list of 2darrays (TxZ)
+        sequences to be classified
+    hmms : list of GHMMs 
+        list of hmms each of which corresponds to a class
+    Returns
+    -------
+    predictions : list of ints
+        list of class labels
+    """
+    predictions = []
+    for k in range(len(seqs)):
+        seq = seqs[k]
+        p_max = np.finfo(np.float64).min
+        label_max = 0
+        for label in range(len(hmms)):
+            hmm = hmms[label]
+            p = hmm.calc_likelihood([seq])
+            if p > p_max:
+                p_max = p
+                label_max = label
+        predictions.append(label_max)
+    return predictions
+
 def _generate_discrete_distribution(n):
     """ Generate n values > 0.0, whose sum equals 1.0
     """
