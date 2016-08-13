@@ -151,7 +151,10 @@ class GHMM:
         for t in range(T):
             for i in range(N):
                 for m in range(M):
-                    g[t, i, m] = sp.stats.multivariate_normal.pdf(seq[t], mu[i,m], sig[i,m])
+                    temp = sp.stats.multivariate_normal.pdf(seq[t], mu[i,m], sig[i,m])
+                    if temp == 0.0:
+                        temp = 1.0e-200 # to prevent underflow
+                    g[t, i, m] = temp
         b = np.sum(tau * g, axis=2)
         return b, g
     
