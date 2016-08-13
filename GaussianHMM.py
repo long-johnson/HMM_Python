@@ -25,6 +25,8 @@ class GHMM:
         
         seed - provide seed if HMM needs to be generated randomly (not evenly)
         """
+        if seed is not None:
+            np.random.seed(seed)  
         self._n = n
         self._m = m
         self._z = z
@@ -80,7 +82,8 @@ class GHMM:
         """
         # preparation
         # randomize with accordance to seed
-        np.random.seed(seed)
+        if seed is not None:
+            np.random.seed(seed) 
         # prepare list for sequences
         seqs = [np.empty((T,self._z),dtype=np.float64) for k in range(K)]
         state_seqs = [np.empty(T, dtype=np.int32) for k in range(K)]

@@ -73,7 +73,8 @@ class DHMM:
         """
         # preparation
         # randomize with accordance to seed
-        np.random.seed(seed)
+        if seed is not None:
+            np.random.seed(seed)  
         # prepare list for sequences
         seqs = [np.empty(T,dtype=np.int32) for k in range(K)]
         state_seqs = [np.empty(T,dtype=np.int32) for k in range(K)]
