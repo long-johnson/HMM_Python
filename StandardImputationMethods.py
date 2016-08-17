@@ -1,19 +1,40 @@
 # -*- coding: utf-8 -*-
 
-import copy
 import numpy as np
 
 # TODO: more universal mode
-def impute_by_n_neighbours(seqs, avails, n, is_middle=True, method='avg',
-                           n_of_symbols=2):
+def impute_by_n_neighbours(seqs, avails, n, is_middle=True, method='mean',
+                           n_of_symbols=None):
     """ Impute missing values (imp) by values of its neighbours
-    method -- "average": imp = avg of n neighbours
-              "mode":    imp = mode of n neighbours
-    n_of_symbols -- int k: number of distinct values (to be used with "mode" method)
-    is_middle -- true: take ceil(n/2) next and ceil(n/2) prev values
-                 false: take n previous values
+    
+    Parameters
+    ----------
+    seqs : list of int or float ndarrays
+        sequences twith gaps
+    avails_imp : list of boolean 1darrays
+        indicates which observations are availiable
+    n : int
+        number of neighbours to take into account
+    is_middle : boolean
+        controls whether gap should be imputed by surrounding elements
+        or just by preceeding ones
+    method : string
+        "mean": imp = mean of n neighbours
+        "mode":    imp = mode of n neighbours
+    n_of_symbols : int
+        number of distinct values (to be used with "mode" method)
+    is_middle : boolean
+        true: take ceil(n/2) next and ceil(n/2) prev values
+        false: take n previous values
+    
+    Returns
+    -------
+    seqs_imp : list of int or float ndarrays
+        imputed sequences
+    avails_imp : list of boolean 1darrays
+        indicates which observations are availiable now
     """
-    assert method in ('avg', 'mode'), "Invalid method '{}'".format(mode)
+    assert method in ('mean', 'mode'), "Invalid method '{}'".format(method)
     K = len(seqs)
     seqs_imp = []
     avails_imp = []
@@ -27,7 +48,7 @@ def impute_by_n_neighbours(seqs, avails, n, is_middle=True, method='avg',
     return seqs_imp, avails_imp
         
 def _impute_by_n_neighbours(seq, avail, n_, is_middle, method, n_of_symbols):
-    T = seq.size
+    T = seq.shape[0]
     seq_imp = np.array(seq)
     avail_imp = np.array(avail)
     if is_middle:
@@ -49,7 +70,7 @@ def _impute_by_n_neighbours(seq, avail, n_, is_middle, method, n_of_symbols):
             # if no neigbours availiable
             if n_of_avl == 0:
                 continue
-            if method == 'avg':
+            if method == 'mean':
                 imp = 1.0 * np.sum((seq_imp[l_b:r_b])[avl]) / n_of_avl
             if method == 'mode':
                 imp = np.argmax(np.histogram((seq_imp[l_b:r_b])[avl],\
@@ -60,9 +81,9 @@ def _impute_by_n_neighbours(seq, avail, n_, is_middle, method, n_of_symbols):
     
 # TODO: more universal mode
 # TODO: what if no observations are availiable at all?
-def impute_by_whole_seq(seqs, avails, method="avg", n_of_symbols=2):
+def impute_by_whole_seq(seqs, avails, method="mean", n_of_symbols=2):
     """ Impute missing values (imp) with average value
-    method -- "average": imp = avg of sequence
+    method -- "mean: imp = mean of sequence
     "mode":    imp = mode of sequence
     """
     K = len(seqs)
@@ -70,7 +91,7 @@ def impute_by_whole_seq(seqs, avails, method="avg", n_of_symbols=2):
     for k in range(K):
         seq_imp = np.array(seqs[k])
         avail = avails[k]
-        if method == 'avg':
+        if method == 'mean':
             imp = np.sum(seq_imp[avail]) / np.count_nonzero(avail)
         else:
             imp = np.argmax(np.histogram(seq_imp[avail],\

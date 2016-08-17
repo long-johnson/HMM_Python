@@ -531,6 +531,42 @@ class GHMM:
             seqs_imputed = hmm0.impute_by_states(seqs, avails, states_decoded)
             p, it = self.train_baumwelch(seqs_imputed, rtol, max_iter)
         return p, it
+        
+    def train_bauwelch_impute_mean(self, seqs, rtol, max_iter, avails, params=None):
+        """ Train HMM with Baum-Welch by restoring gaps using mean imputation
+        
+        Parameters
+        ----------
+        seqs : list of float64 2darrays (TxZ)
+            training sequences
+            Note: len(seqs) = K
+        rtol : float64
+            relative tolerance (stopping criterion)
+        max_iter : float64
+            maximum number of Baum-Welch iterations (stopping criterion)
+        avails : list of boolean 1darrays (T)
+            arrays that indicate whether each element of each sequence is 
+            not missing, i.e. True - not missing, False - is missing
+        params : list of one item
+            number of neighbours
+            
+        Returns
+        -------
+        p : float64
+            total likelihood of training seqs being produced by the trained HMM
+        it : int
+            iteration reached during baum-welch training process
+        """
+        if params is not None:
+            n_neighbours = params[0]
+        else:
+            n_neighbours=10
+        seqs_imp, avails_imp = imp.impute_by_n_neighbours(seqs, avails, n_neighbours,
+                                              is_middle=True, method="mean")
+        # in case some gaps were not imputed
+        seqs_imp = imp.impute_by_whole_seq(seqs_imp, avails_imp, method="mean")
+        p, it = self.train_baumwelch(seqs_imp, rtol, max_iter)
+        return p, it
 
 def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, hmms0=None, rtol=1e-1, 
                              max_iter=None, verbose=False):
