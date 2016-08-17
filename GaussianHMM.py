@@ -303,17 +303,27 @@ class GHMM:
     
     def train_baumwelch(self, seqs, rtol, max_iter, avails=None):
         """ Adjust the parameters of the HMM using Baum-Welch algorithm
+        
+        Parameters
+        ----------
         seqs : list of float64 2darrays (TxZ)
             training sequences
             Note: len(seqs) = K
         rtol : float64
             relative tolerance (stopping criterion)
         max_iter : float64, optional
-            maximal number of Baum-Welch iterations (stopping criterion)
+            maximum number of Baum-Welch iterations (stopping criterion)
         avails : list of boolean 1darrays (T), optional
             arrays that indicate whether each element of each sequence is 
-            not missing, i.e. True - not missing, False - is missing
+            not missing (availiable), i.e. True - not missing, False - is missing
             Note: len(avails) = K
+            
+        Returns
+        -------
+        likelihood : float64
+            total likelihood of training seqs being produced by the trained HMM
+        iteration : int
+            iteration reached during baum-welch training process
         """
         N = self._n
         M = self._m

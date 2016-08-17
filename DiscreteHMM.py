@@ -424,14 +424,14 @@ class DHMM:
         return -- states_decoded
         """
         K = len(seqs)
-        T = seqs[0].size
         states = []
         if avails is not None:
             for k in range(K): 
                 states.append(self._decode_viterbi(seqs[k], avails[k]))
         else:
-            avail = np.full(T, True, dtype=np.bool)
-            for k in range(K): 
+            for k in range(K):
+                T = seqs[k].size
+                avail = np.full(T, True, dtype=np.bool)
                 states.append(self._decode_viterbi(seqs[k], avail))
         return states
     
@@ -441,6 +441,7 @@ class DHMM:
         return -- states_decoded
         """
         T = seq.size   
+        # TODO: For what do I use aran???
         aran = np.arange(self._n, dtype=np.int32) # for selecting max columns
         # precompute logs of transpose(a) and b
         # TODO: take care of zero probabilities?
@@ -477,7 +478,6 @@ class DHMM:
         for k in range(K):
             seq = seqs[k]
             avail = avails[k]
-            #dbg = np.where(avail==False)
             for t in np.where(avail==False)[0]:
                 seq[t] = np.argmax(self._b[states[k][t],:])
         return seqs
