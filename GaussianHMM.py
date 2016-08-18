@@ -640,17 +640,22 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, algorithm='marginalizati
     n_of_best : int
         number of the initial approximation that gave the best hmm
     """
-    # TODO: generate approximations if not given any
-    # TODO: generate mu and sig according to seqs, but slightly random
     assert algorithm in ('marginalization', 'gluing', 'viterbi', 'mean'),\
         "Invalid algorithm '{}'".format(algorithm)
-    # calc and choose the best hmm estimate
-    hmms = copy.deepcopy(hmms0)
+    if hmms0 is None:
+        mu_est, sig_est = estimate_mu_sig(seqs, N, M, Z, avails)
+        hmms = [GHMM(N,M,Z,mu_est,sig_est,seed=np.random.randint(10000))
+                    for i in range(hmms0_size-1)]       
+        # standard pi, a, tau parameters
+        hmms.append(GHMM(N,M,Z,mu_est,sig_est))
+    else:
+        hmms = copy.deepcopy(hmms0)
     p_max = np.finfo(np.float64).min # minimal value possible
     hmm_best = None
     iter_best = -1 # count number of iters for the best hmm
     n_of_best = -1  # number of the best hmm
     n_of_approx = 0
+    # calc and choose the best hmm estimate
     for hmm in hmms:
         if algorithm == 'marginalization':
             p, iteration = hmm.train_baumwelch(seqs, rtol, max_iter, avails)
