@@ -595,6 +595,37 @@ class GHMM:
         seqs_imp = imp.impute_by_whole_seq(seqs_imp, avails_imp, method="mean")
         p, it = self.train_baumwelch(seqs_imp, rtol, max_iter)
         return p, it
+        
+    def train_baumwelch_gluing(self, seqs, rtol, max_iter, avails):
+        """ Glue segments between gaps together and then train Baum-Welch
+        
+        Parameters
+        ----------
+        seqs : list of float64 2darrays (TxZ)
+            training sequences
+            Note: len(seqs) = K
+        rtol : float64
+            relative tolerance (stopping criterion)
+        max_iter : float64
+            maximum number of Baum-Welch iterations (stopping criterion)
+        avails : list of boolean 1darrays (T)
+            arrays that indicate whether each element of each sequence is availiable
+        
+        Returns
+        -------
+        p : float64
+            total likelihood of training seqs being produced by the trained HMM
+        it : int
+            iteration reached during baum-welch training process
+        """
+        K = len(seqs)
+        # remove all gaps and just glue remaining segments together
+        seqs_glued = []
+        for k in range(K):
+            glued = seqs[k][avails[k]]  # fancy indexing
+            seqs_glued.append(glued)
+        p, it = self.train_baumwelch(seqs_glued, rtol, max_iter)
+        return p, it
 
 def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, algorithm='marginalization',
                              avails=None, hmms0=None, rtol=1e-1, max_iter=None, 
@@ -660,8 +691,7 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, algorithm='marginalizati
         if algorithm == 'marginalization':
             p, iteration = hmm.train_baumwelch(seqs, rtol, max_iter, avails)
         if algorithm == 'gluing':
-            raise NotImplementedError, "gluing is not implemented yet"
-            #p, iteration = hmm0.train_baumwelch_gluing(seqs, rtol, max_iter, avails)
+            p, iteration = hmm.train_baumwelch_gluing(seqs, rtol, max_iter, avails)
         if algorithm == 'viterbi':
             p, iteration = hmm.train_bauwelch_impute_viterbi(seqs, rtol, 
                                                              max_iter, avails)
