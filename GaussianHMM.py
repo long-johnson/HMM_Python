@@ -434,9 +434,10 @@ class GHMM:
         N = self._n
         pi = self._pi
         log_a_tr = (np.log(self._a)).T
-        b, g = self._calc_b(seq, avail)
+        b, _ = self._calc_b(seq, avail)
         log_b = np.log(b)
         psi = np.empty(shape=(T, N), dtype=np.int32)
+        row_idx = np.arange(N) # to select max columns
         # initialization
         delta = np.log(pi) + log_b[0, :]     
         # recursion
@@ -444,7 +445,7 @@ class GHMM:
             temp = delta + log_a_tr
             argmax = np.argmax(temp, axis=1)
             psi[t,:] = argmax
-            delta = temp[:, argmax] + log_b[t, :]
+            delta = temp[row_idx, argmax] + log_b[t, :]
         # backtracking
         q = np.empty(T, dtype=np.int32)
         q[-1] = np.argmax(delta)
