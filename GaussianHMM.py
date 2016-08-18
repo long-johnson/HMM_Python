@@ -8,22 +8,50 @@ import StandardImputationMethods as imp
 
 class GHMM:
     """Implementation of Hidden Markov Model where observation density is
-    represented by a mixture of normal distributions
-       Observations are vectors of real numbers
+    represented by a mixture of normal distributions  
+    Observations are vectors of real numbers
+       
+       Attributes
+        ----------
+        N : integer
+            number of hidden states
+        M : integer 
+            number of distribution mixture components
+        Z : integer 
+            dimension of observations
+        pi : integer 1darray (N)
+            initial state distribution vector
+        a : 2darray (NxN)
+            transition probabilities matrix 
+        tau : 2darray (NxM)
+            weights of mixture distributions 
+        mu : 3darray (NxMxZ)
+            means of normal distributions
+        sig : 4darray (NxMxZ)
+            covariation matrix of normal distributions
     """
     
     def __init__(self, n, m, z, mu, sig, pi=None, a=None, tau=None, seed=None):
         """ 
-        n - number of hidden states
-        m - number of distribution mixture components
-        z - dimension of observations
-        pi - initial state distribution vector (n)
-        a - transition probabilities matrix (n x n)
-        tau - weights of mixture distributions (n x m)
-        mu - means of normal distributions (n x m x z)
-        sig - covariation matrix of normal distributions (n x m x z x z)
         
-        seed - provide seed if HMM needs to be generated randomly (not evenly)
+        Parameters
+        ----------
+        n : integer
+            number of hidden states
+        m : integer 
+            number of distribution mixture components
+        z : integer 
+            dimension of observations
+        pi : integer 1darray (N)
+            initial state distribution vector
+        a : 2darray (NxN)
+            transition probabilities matrix 
+        tau : 2darray (NxM)
+            weights of mixture distributions 
+        mu : 3darray (NxMxZ)
+            means of normal distributions
+        sig : 4darray (NxMxZ)
+            covariation matrix of normal distributions
         """
         if seed is not None:
             np.random.seed(seed)  
@@ -49,7 +77,7 @@ class GHMM:
                 self._a[i, :] = _generate_discrete_distribution(n)      
         # mixture weights
         if tau is not None:
-            self._tau = tau
+            self._tau = np.array(tau)
         elif seed is None:
             self._tau = np.full((n,m), 1.0/m)
         else:
@@ -57,8 +85,8 @@ class GHMM:
             for i in range(n):
                 self._tau[i,:] = _generate_discrete_distribution(m)
         # TODO: add random generation of mu and sig
-        self._mu = mu
-        self._sig = sig
+        self._mu = np.array(mu)
+        self._sig = np.array(sig)
         
     def generate_sequences(self, K, T, seed=None):
         """
@@ -486,10 +514,9 @@ class GHMM:
             for t in np.where(avail==False)[0]:
                 # calc pdfs for each mixture component
                 for m in range(M):
-                    pdfs[m] = sp.stats.multivariate_normal.pdf(seq[t], \
-                                                            mu[states[t],m], \
-                                                            sig[states[t],m],
-                                                            allow_singular=True)
+                    pdfs[m] = sp.stats.multivariate_normal.pdf(
+                                seq[t], mu[states[t],m], sig[states[t],m],
+                                allow_singular=True)
                 # select mean of mixture component that gave the maximum pdf
                 seq[t] = mu[states[t], np.argmax(pdfs)]
         return seqs
