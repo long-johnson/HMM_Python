@@ -568,8 +568,9 @@ class GHMM:
         p, it = self.train_baumwelch(seqs_imp, rtol, max_iter)
         return p, it
 
-def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, hmms0=None, rtol=1e-1, 
-                             max_iter=None, verbose=False):
+def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, algorithm='marginalization',
+                             avails=None, hmms0=None, rtol=1e-1, max_iter=None, 
+                             verbose=False):
     """ Train several hmms using baumwelch algorithm and choose the best one
     
     Parameters
@@ -584,6 +585,11 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, hmms0=None, rtol=1e-1,
         number of HMM symbols
     Z : int
         dimensionality of observations
+    algorithm : {'marginalization', 'gluing', 'viterbi', 'mean'}
+        which algorithm should be used to handle missing observations
+    avails : list of boolean 1darrays (T)
+            arrays that indicate whether each element of each sequence is 
+            not missing (availiable), i.e. True - not missing, False - is missing
     hmms0 : list of GHMMs, optional
         list of initial approximations of HMM parameters
         !note: len(hmms0) == hmms0_size must be fulfilled!
@@ -591,7 +597,7 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, hmms0=None, rtol=1e-1,
     rtol : float64, optional
         relative tolerance (stopping criterion)
     max_iter : float64, optional
-        maximal number of Baum-Welch iterations (stopping criterion)
+        maximum number of Baum-Welch iterations (stopping criterion)
     verbose : bool, optional
         controls whether some debug info should be printed to stdout
     
@@ -599,31 +605,53 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, hmms0=None, rtol=1e-1,
     -------
     hmm_best : GHMM
         best trained hmm or None
-    iter_best : float64
+    p_max : float64
+        likelihood for the best hmm
+    iter_best : int
         number of iterations to train the best hmm 
+    n_of_best : int
+        number of the initial approximation that gave the best hmm
     """
     # TODO: generate approximations if not given any
     # TODO: generate mu and sig according to seqs, but slightly random
+    assert algorithm in ('marginalization', 'gluing', 'viterbi', 'mean'),\
+        "Invalid algorithm '{}'".format(algorithm)
     # calc and choose the best hmm estimate
     hmms = copy.deepcopy(hmms0)
     p_max = np.finfo(np.float64).min # minimal value possible
     hmm_best = None
     iter_best = -1 # count number of iters for the best hmm
+    n_of_best = -1  # number of the best hmm
+    n_of_approx = 0
     for hmm in hmms:
-        p, iteration = hmm.train_baumwelch(seqs, rtol, max_iter)
+        if algorithm == 'marginalization':
+            p, iteration = hmm.train_baumwelch(seqs, rtol, max_iter, avails)
+        if algorithm == 'gluing':
+            raise NotImplementedError, "gluing is not implemented yet"
+            #p, iteration = hmm0.train_baumwelch_gluing(seqs, rtol, max_iter, avails)
+        if algorithm == 'viterbi':
+            p, iteration = hmm.train_bauwelch_impute_viterbi(seqs, rtol, 
+                                                             max_iter, avails)
+        if algorithm == 'mean':
+            p, iteration = hmm.train_bauwelch_impute_mean(seqs, rtol, 
+                                                          max_iter, avails)
         if (p_max < p and np.isfinite(p)):
             hmm_best = hmm
             p_max = p
             iter_best = iteration
+            n_of_best = n_of_approx
         if verbose:
-            print "another approximation: p=" + str(p)
+            print "Baum: n of approximation = " + str(n_of_approx)
+            print "p=" + str(p)
             print "iteration = " + str(iteration)
             print hmm._pi
             print hmm._a
             print hmm._tau
             print hmm._mu
             print hmm._sig
-    return hmm_best, iter_best
+            print
+        n_of_approx += 1
+    return hmm_best, p_max, iter_best, n_of_best
 
 def estimate_mu_sig(seqs, N, M, Z):
     """ Estimate values of mu and sig basing on the sequences.
