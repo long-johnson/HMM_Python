@@ -681,7 +681,7 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, algorithm='marginalizati
         n_of_approx += 1
     return hmm_best, p_max, iter_best, n_of_best
 
-def estimate_mu_sig(seqs, N, M, Z):
+def estimate_mu_sig(seqs, N, M, Z, avails=None):
     """ Estimate values of mu and sig basing on the sequences.
         mu elements are uniformly scattered from min to max seq element
         sig matrixes are diagonal scaled accordingly to min and max seq elements
@@ -696,6 +696,9 @@ def estimate_mu_sig(seqs, N, M, Z):
             number of distribution mixture components
         Z : int
             dimensionality of observations
+        avails : list of boolean 1darrays (T), optional
+            arrays that indicate whether each element of each sequence is 
+            not missing (availiable), i.e. True - not missing, False - is missing
         
         Returns
         -------
@@ -705,10 +708,13 @@ def estimate_mu_sig(seqs, N, M, Z):
             covariation matrix of normal distributions
     """
     # TODO: add more clever heuristics to this procedure
+    K = len(seqs)
+    if avails is None:
+        avails = [np.full(shape=seqs[k].shape[0], fill_value=True) for k in range(K)]
     mu = np.empty((N*M,Z))
     sig = np.empty((N,M,Z,Z))
-    min_val = np.nanmin([np.nanmin(seq, axis=0) for seq in seqs], axis=0)
-    max_val = np.nanmax([np.nanmax(seq, axis=0) for seq in seqs], axis=0)
+    min_val = np.min([np.min(seqs[k][avails[k]], axis=0) for k in range(K)], axis=0)
+    max_val = np.max([np.max(seqs[k][avails[k]], axis=0) for k in range(K)], axis=0)
     step = (max_val - min_val) / (N*M)
     val = min_val + step/2.0
     for i in range(N*M):
