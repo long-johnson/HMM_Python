@@ -10,23 +10,19 @@ import time
 import GaussianHMM as ghmm
 import StandardImputationMethods as stdimp
 
-start_time = time.time()
-
 # experiment parameters
 T = 100
-K_train = 100
-K_class = 100
+K_train = 1
+K_class = 1
 rtol=1e-2
-max_iter=15
-hmms0_size = 5
+max_iter=1
+hmms0_size = 1
 sig_val = 0.1
 dA = 0.2
 number_of_launches = 5
 use_predefined_hmms0 = False
 is_gaps_places_different = True
 is_verbose = False
-
-
 
 filename = "ultimate"+"_dA"+str(dA)+"_t"+str(T)+"_k"+str(K_train)+"_initrand"+\
     str(hmms0_size*np.logical_not(use_predefined_hmms0))\
@@ -101,9 +97,96 @@ for n in range(N):
 hmm0 = ghmm.GHMM(N, M, Z, mu, sig, pi=pi, a=a, tau=tau)
 """
 
+def evaluate_training(ps, pi_norms, a_norms, tau_norms, mu_norms, sig_norms,
+                      class_percent, step, seed, start_time,
+                      hmm1, hmm2, seqs_train_orig1, seqs_train_orig2,
+                      train_seqs1, train_seqs2, hmms0_size, N, M, Z,
+                      hmms0=None, algorithm='marginalization', rtol=None,
+                      max_iter=100, avails1=None, avails2=None, verbose=False):
+    """ Code to evaluate hmm training performance on given sequences
+    """
+    np.random.seed(seed)
+    hmm_trained1, _, iter1, n_of_best1 = \
+        ghmm.train_best_hmm_baumwelch(train_seqs1, hmms0_size, N, M, Z, hmms0=hmms0,
+                                            algorithm=algorithm, rtol=rtol,
+                                            max_iter=max_iter, avails=avails1,
+                                            verbose=verbose)
+    np.random.seed(seed)
+    hmm_trained2, _, iter2, n_of_best2 = \
+        ghmm.train_best_hmm_baumwelch(train_seqs2, hmms0_size, N, M, Z, hmms0=hmms0,
+                                            algorithm=algorithm, rtol=rtol,
+                                            max_iter=max_iter, avails=avails2,
+                                            verbose=verbose)
+    if hmm_trained1 is None or hmm_trained2 is None:
+        ps[step] += 0.0
+        pi_norms[step] += 1.5
+        a_norms[step] += 2.0
+        tau_norms[step] += 2.0
+        mu_norms[step] += 2.0
+        sig_norms[step] += 2.0
+        class_percent[step] += 50.0
+    else:
+        # diff between 1st trained model and 1st true model
+        diff_pi1 = np.linalg.norm(hmm_trained1._pi-hmm1._pi)           
+        diff_a1 = np.linalg.norm(hmm_trained1._a-hmm1._a)
+        diff_tau1 = np.linalg.norm(hmm_trained1._tau-hmm1._tau)
+        diff_mu1 = np.linalg.norm(hmm_trained1._mu-hmm1._mu)
+        diff_sig1 = np.linalg.norm(hmm_trained1._sig-hmm1._sig)
+        # diff between 2nd trained model and 2nd true model
+        diff_pi2 = np.linalg.norm(hmm_trained2._pi-hmm2._pi)           
+        diff_a2 = np.linalg.norm(hmm_trained2._a-hmm2._a)
+        diff_tau2 = np.linalg.norm(hmm_trained2._tau-hmm2._tau)
+        diff_mu2 = np.linalg.norm(hmm_trained2._mu-hmm2._mu)
+        diff_sig2 = np.linalg.norm(hmm_trained2._sig-hmm2._sig)
+        # some kind of average diff
+        #diff_a = (diff_a1 + diff_a2) / 2.0
+        #diff_b = (diff_b1 + diff_b2) / 2.0
+        print "n_of_gaps " + str(n_of_gaps)
+        print "Marginalization"
+        print "model1"
+        print hmm_trained1._pi
+        print hmm_trained1._a
+        print hmm_trained1._tau
+        print hmm_trained1._mu
+        print hmm_trained1._sig
+        print "model2"
+        print hmm_trained2._pi
+        print hmm_trained2._a
+        print hmm_trained2._tau
+        print hmm_trained2._mu
+        print hmm_trained2._sig
+        loglikelihood1 = hmm_trained1.calc_likelihood(seqs_train1)
+        loglikelihood2 = hmm_trained2.calc_likelihood(seqs_train2)
+        print "loglikelihood: {} / {}".format(loglikelihood1, loglikelihood2)
+        print "loglikelihood true: {} / {}".format(loglikelihood_true1, loglikelihood_true2)
+        print "norm of pi diff = " + str(diff_pi1) + " / " + str(diff_pi2)
+        print "norm of A diff = " + str(diff_a1) + " / " + str(diff_a2)
+        print "norm of TAU diff = " + str(diff_tau1) + " / " + str(diff_tau2)
+        print "norm of MU diff = " + str(diff_mu1) + " / " + str(diff_mu2)
+        print "norm of SIG diff = " + str(diff_sig1) + " / " + str(diff_sig2)
+        print "loglikelihood"
+        print "Iterations: " + str(iter1) + " / " + str(iter2)
+        print "n_of_best: {} / {}".format(n_of_best1, n_of_best2)
+        # classification
+        class_res1 = ghmm.classify_seqs(seqs_class1, [hmm_trained1, hmm_trained2])
+        class_res2 = ghmm.classify_seqs(seqs_class2, [hmm_trained1, hmm_trained2])
+        percent = 100.0*(class_res1.count(0) + class_res2.count(1)) / (2.0*K_class)
+        # update
+        ps[step] += loglikelihood1
+        pi_norms[step] += diff_pi1
+        a_norms[step] += diff_a1
+        tau_norms[step] += diff_tau1
+        mu_norms[step] += diff_mu1
+        sig_norms[step] += diff_sig1
+        class_percent[step] += percent
+        print str(percent) + " %"
+    print("--- %.1f minutes ---" % ((time.time()-start_time) / 60))
+
+
 #
 # research
 #
+start_time = time.time()
 if use_predefined_hmms0:
     hmms0 = []
 else:
@@ -207,318 +290,56 @@ for n_of_launch in range(number_of_launches):
         #
         # marginalization
         #        
-        np.random.seed(n_of_launch)
-        hmm_trained1, _, iter1, n_of_best1 = \
-            ghmm.train_best_hmm_baumwelch(train_seqs1, hmms0_size, N, M, Z, hmms0=hmms0,
-                                                algorithm='marginalization', rtol=rtol,
-                                                max_iter=max_iter, avails=avails1,
-                                                verbose=is_verbose)
-        np.random.seed(n_of_launch)
-        hmm_trained2, _, iter2, n_of_best2 = \
-            ghmm.train_best_hmm_baumwelch(train_seqs2, hmms0_size, N, M, Z, hmms0=hmms0,
-                                                algorithm = 'marginalization', rtol=rtol,
-                                                max_iter=max_iter, avails=avails2,
-                                                verbose=is_verbose)
-        if hmm_trained1 is None or hmm_trained2 is None:
-            ps_marg[step] += 0.0
-            pi_norms_marg[step] += 1.5
-            a_norms_marg[step] += 2.0
-            tau_norms_marg[step] += 2.0
-            mu_norms_marg[step] += 2.0
-            sig_norms_marg[step] += 2.0
-            class_percent_marg[step] += 50.0
-        else:
-            # diff between 1st trained model and 1st true model
-            diff_pi1 = np.linalg.norm(hmm_trained1._pi-hmm1._pi)           
-            diff_a1 = np.linalg.norm(hmm_trained1._a-hmm1._a)
-            diff_tau1 = np.linalg.norm(hmm_trained1._tau-hmm1._tau)
-            diff_mu1 = np.linalg.norm(hmm_trained1._mu-hmm1._mu)
-            diff_sig1 = np.linalg.norm(hmm_trained1._sig-hmm1._sig)
-            # diff between 2nd trained model and 2nd true model
-            diff_pi2 = np.linalg.norm(hmm_trained2._pi-hmm2._pi)           
-            diff_a2 = np.linalg.norm(hmm_trained2._a-hmm2._a)
-            diff_tau2 = np.linalg.norm(hmm_trained2._tau-hmm2._tau)
-            diff_mu2 = np.linalg.norm(hmm_trained2._mu-hmm2._mu)
-            diff_sig2 = np.linalg.norm(hmm_trained2._sig-hmm2._sig)
-            # some kind of average diff
-            #diff_a = (diff_a1 + diff_a2) / 2.0
-            #diff_b = (diff_b1 + diff_b2) / 2.0
-            print "n_of_gaps " + str(n_of_gaps)
-            print "Marginalization"
-            print "model1"
-            print hmm_trained1._pi
-            print hmm_trained1._a
-            print hmm_trained1._tau
-            print hmm_trained1._mu
-            print hmm_trained1._sig
-            print "model2"
-            print hmm_trained2._pi
-            print hmm_trained2._a
-            print hmm_trained2._tau
-            print hmm_trained2._mu
-            print hmm_trained2._sig
-            loglikelihood1 = hmm_trained1.calc_likelihood(seqs_train1)
-            loglikelihood2 = hmm_trained2.calc_likelihood(seqs_train2)
-            print "loglikelihood: {} / {}".format(loglikelihood1, loglikelihood2)
-            print "loglikelihood true: {} / {}".format(loglikelihood_true1, loglikelihood_true2)
-            print "norm of pi diff = " + str(diff_pi1) + " / " + str(diff_pi2)
-            print "norm of A diff = " + str(diff_a1) + " / " + str(diff_a2)
-            print "norm of TAU diff = " + str(diff_tau1) + " / " + str(diff_tau2)
-            print "norm of MU diff = " + str(diff_mu1) + " / " + str(diff_mu2)
-            print "norm of SIG diff = " + str(diff_sig1) + " / " + str(diff_sig2)
-            print "loglikelihood"
-            print "Iterations: " + str(iter1) + " / " + str(iter2)
-            print "n_of_best: {} / {}".format(n_of_best1, n_of_best2)
-            # classification
-            class_res1 = ghmm.classify_seqs(seqs_class1, [hmm_trained1, hmm_trained2])
-            class_res2 = ghmm.classify_seqs(seqs_class2, [hmm_trained1, hmm_trained2])
-            percent = 100.0*(class_res1.count(0) + class_res2.count(1)) / (2.0*K_class)
-            # update
-            ps_marg[step] += loglikelihood1
-            pi_norms_marg[step] += diff_pi1
-            a_norms_marg[step] += diff_a1
-            tau_norms_marg[step] += diff_tau1
-            mu_norms_marg[step] += diff_mu1
-            sig_norms_marg[step] += diff_sig1
-            class_percent_marg[step] += percent
-            print str(percent) + " %"
-        print("--- %.1f minutes ---" % ((time.time()-start_time) / 60))
+        evaluate_training(ps_marg, pi_norms_marg, a_norms_marg, tau_norms_marg, 
+                          mu_norms_marg, sig_norms_marg, class_percent_marg,
+                          step, n_of_launch, start_time,
+                          hmm1, hmm2, seqs_train1, seqs_train2,
+                          train_seqs1, train_seqs2, hmms0_size, N, M, Z,
+                          hmms0, algorithm='marginalization', rtol=rtol,
+                          max_iter=max_iter, avails1=avails1, avails2=avails2,
+                          verbose=is_verbose)
         
         #
         # viterbi
         #
-        np.random.seed(n_of_launch)
-        hmm_trained1, _, iter1, n_of_best1 = \
-            ghmm.train_best_hmm_baumwelch(train_seqs1, hmms0_size, N, M, Z, hmms0=hmms0,
-                                                algorithm='viterbi', rtol=rtol,
-                                                max_iter=max_iter, avails=avails1)
-        np.random.seed(n_of_launch)  
-        hmm_trained2, _, iter2, n_of_best2 = \
-            ghmm.train_best_hmm_baumwelch(train_seqs2, hmms0_size, N, M, Z, hmms0=hmms0,
-                                                algorithm = 'viterbi', rtol=rtol,
-                                                max_iter=max_iter, avails=avails2)
-        if hmm_trained1 is None or hmm_trained2 is None:
-            ps_viterbi[step] += 0.0
-            pi_norms_viterbi[step] += 1.5
-            a_norms_viterbi[step] += 2.0
-            tau_norms_viterbi[step] += 2.0
-            mu_norms_viterbi[step] += 2.0
-            sig_norms_viterbi[step] += 2.0
-            class_percent_viterbi[step] += 50.0
-        else:
-            # diff between 1st trained model and 1st true model
-            diff_pi1 = np.linalg.norm(hmm_trained1._pi-hmm1._pi)           
-            diff_a1 = np.linalg.norm(hmm_trained1._a-hmm1._a)
-            diff_tau1 = np.linalg.norm(hmm_trained1._tau-hmm1._tau)
-            diff_mu1 = np.linalg.norm(hmm_trained1._mu-hmm1._mu)
-            diff_sig1 = np.linalg.norm(hmm_trained1._sig-hmm1._sig)
-            # diff between 2nd trained model and 2nd true model
-            diff_pi2 = np.linalg.norm(hmm_trained2._pi-hmm2._pi)           
-            diff_a2 = np.linalg.norm(hmm_trained2._a-hmm2._a)
-            diff_tau2 = np.linalg.norm(hmm_trained2._tau-hmm2._tau)
-            diff_mu2 = np.linalg.norm(hmm_trained2._mu-hmm2._mu)
-            diff_sig2 = np.linalg.norm(hmm_trained2._sig-hmm2._sig)
-            # some kind of average diff
-            #diff_a = (diff_a1 + diff_a2) / 2.0
-            #diff_b = (diff_b1 + diff_b2) / 2.0
-            print n_of_gaps
-            print "viterbi"
-            print "model1"
-            print hmm_trained1._pi
-            print hmm_trained1._a
-            print hmm_trained1._tau
-            print hmm_trained1._mu
-            print hmm_trained1._sig
-            print "model2"
-            print hmm_trained2._pi
-            print hmm_trained2._a
-            print hmm_trained2._tau
-            print hmm_trained2._mu
-            print hmm_trained2._sig
-            loglikelihood1 = hmm_trained1.calc_likelihood(seqs_train1)
-            loglikelihood2 = hmm_trained2.calc_likelihood(seqs_train2)
-            print "loglikelihood: {} / {}".format(loglikelihood1, loglikelihood2)
-            print "loglikelihood true: {} / {}".format(loglikelihood_true1, loglikelihood_true2)
-            print "norm of pi diff = " + str(diff_pi1) + " / " + str(diff_pi2)
-            print "norm of A diff = " + str(diff_a1) + " / " + str(diff_a2)
-            print "norm of TAU diff = " + str(diff_tau1) + " / " + str(diff_tau2)
-            print "norm of MU diff = " + str(diff_mu1) + " / " + str(diff_mu2)
-            print "norm of SIG diff = " + str(diff_sig1) + " / " + str(diff_sig2)
-            print "Iterations: " + str(iter1) + " / " + str(iter2)
-            print "n_of_best: {} / {}".format(n_of_best1, n_of_best2)
-            # classification
-            class_res1 = ghmm.classify_seqs(seqs_class1, [hmm_trained1, hmm_trained2])
-            class_res2 = ghmm.classify_seqs(seqs_class2, [hmm_trained1, hmm_trained2])
-            percent = 100.0*(class_res1.count(0) + class_res2.count(1)) / (2.0*K_class)
-            # update            
-            ps_viterbi[step] += loglikelihood1
-            pi_norms_viterbi[step] += diff_pi1
-            a_norms_viterbi[step] += diff_a1
-            tau_norms_viterbi[step] += diff_tau1
-            mu_norms_viterbi[step] += diff_mu1
-            sig_norms_viterbi[step] += diff_sig1
-            class_percent_viterbi[step] += percent
-            print str(percent) + " %"
-        print("--- %.1f minutes ---" % ((time.time()-start_time) / 60))
+        evaluate_training(ps_viterbi, pi_norms_viterbi, a_norms_viterbi, tau_norms_viterbi, 
+                          mu_norms_viterbi, sig_norms_viterbi, class_percent_viterbi,
+                          step, n_of_launch, start_time,
+                          hmm1, hmm2, seqs_train1, seqs_train2,
+                          train_seqs1, train_seqs2, hmms0_size, N, M, Z,
+                          hmms0, algorithm='viterbi', rtol=rtol,
+                          max_iter=max_iter, avails1=avails1, avails2=avails2,
+                          verbose=is_verbose)
         
         #
         # gluing
         #
-        np.random.seed(n_of_launch)
-        hmm_trained1, _, iter1, n_of_best1 = \
-            ghmm.train_best_hmm_baumwelch(train_seqs1, hmms0_size, N, M, Z, hmms0=hmms0,
-                                                algorithm='gluing', rtol=rtol,
-                                                max_iter=max_iter, avails=avails1)
-        np.random.seed(n_of_launch)
-        hmm_trained2, _, iter2, n_of_best2 = \
-            ghmm.train_best_hmm_baumwelch(train_seqs2, hmms0_size, N, M, Z, hmms0=hmms0,
-                                                algorithm = 'gluing', rtol=rtol,
-                                                max_iter=max_iter, avails=avails2)
-        if hmm_trained1 is None or hmm_trained2 is None:
-            ps_gluing[step] += 0.0
-            pi_norms_gluing[step] += 1.5
-            a_norms_gluing[step] += 2.0
-            tau_norms_gluing[step] += 2.0
-            mu_norms_gluing[step] += 2.0
-            sig_norms_gluing[step] += 2.0
-            class_percent_gluing[step] += 50.0
-        else:
-            # diff between 1st trained model and 1st true model
-            diff_pi1 = np.linalg.norm(hmm_trained1._pi-hmm1._pi)           
-            diff_a1 = np.linalg.norm(hmm_trained1._a-hmm1._a)
-            diff_tau1 = np.linalg.norm(hmm_trained1._tau-hmm1._tau)
-            diff_mu1 = np.linalg.norm(hmm_trained1._mu-hmm1._mu)
-            diff_sig1 = np.linalg.norm(hmm_trained1._sig-hmm1._sig)
-            # diff between 2nd trained model and 2nd true model
-            diff_pi2 = np.linalg.norm(hmm_trained2._pi-hmm2._pi)           
-            diff_a2 = np.linalg.norm(hmm_trained2._a-hmm2._a)
-            diff_tau2 = np.linalg.norm(hmm_trained2._tau-hmm2._tau)
-            diff_mu2 = np.linalg.norm(hmm_trained2._mu-hmm2._mu)
-            diff_sig2 = np.linalg.norm(hmm_trained2._sig-hmm2._sig)
-            # some kind of average diff
-            #diff_a = (diff_a1 + diff_a2) / 2.0
-            #diff_b = (diff_b1 + diff_b2) / 2.0
-            print n_of_gaps
-            print "gluing"
-            print "model1"
-            print hmm_trained1._pi
-            print hmm_trained1._a
-            print hmm_trained1._tau
-            print hmm_trained1._mu
-            print hmm_trained1._sig
-            print "model2"
-            print hmm_trained2._pi
-            print hmm_trained2._a
-            print hmm_trained2._tau
-            print hmm_trained2._mu
-            print hmm_trained2._sig
-            loglikelihood1 = hmm_trained1.calc_likelihood(seqs_train1)
-            loglikelihood2 = hmm_trained2.calc_likelihood(seqs_train2)
-            print "loglikelihood: {} / {}".format(loglikelihood1, loglikelihood2)
-            print "loglikelihood true: {} / {}".format(loglikelihood_true1, loglikelihood_true2)
-            print "norm of pi diff = " + str(diff_pi1) + " / " + str(diff_pi2)
-            print "norm of A diff = " + str(diff_a1) + " / " + str(diff_a2)
-            print "norm of TAU diff = " + str(diff_tau1) + " / " + str(diff_tau2)
-            print "norm of MU diff = " + str(diff_mu1) + " / " + str(diff_mu2)
-            print "norm of SIG diff = " + str(diff_sig1) + " / " + str(diff_sig2)
-            print "Iterations: " + str(iter1) + " / " + str(iter2)
-            print "n_of_best: {} / {}".format(n_of_best1, n_of_best2)
-            # classification
-            class_res1 = ghmm.classify_seqs(seqs_class1, [hmm_trained1, hmm_trained2])
-            class_res2 = ghmm.classify_seqs(seqs_class2, [hmm_trained1, hmm_trained2])
-            percent = 100.0*(class_res1.count(0) + class_res2.count(1)) / (2.0*K_class)
-            # update
-            ps_gluing[step] += loglikelihood1
-            pi_norms_gluing[step] += diff_pi1
-            a_norms_gluing[step] += diff_a1
-            tau_norms_gluing[step] += diff_tau1
-            mu_norms_gluing[step] += diff_mu1
-            sig_norms_gluing[step] += diff_sig1
-            class_percent_gluing[step] += percent
-            print str(percent) + " %"
-        print("--- %.1f minutes ---" % ((time.time()-start_time) / 60))
+        evaluate_training(ps_gluing, pi_norms_gluing, a_norms_gluing, tau_norms_gluing, 
+                          mu_norms_gluing, sig_norms_gluing, class_percent_gluing,
+                          step, n_of_launch, start_time,
+                          hmm1, hmm2, seqs_train1, seqs_train2,
+                          train_seqs1, train_seqs2, hmms0_size, N, M, Z,
+                          hmms0, algorithm='gluing', rtol=rtol,
+                          max_iter=max_iter, avails1=avails1, avails2=avails2,
+                          verbose=is_verbose)
         
         #
         # mean imputation
         #
-        np.random.seed(n_of_launch)
-        hmm_trained1, _, iter1, n_of_best1 = \
-            ghmm.train_best_hmm_baumwelch(train_seqs1, hmms0_size, N, M, Z, hmms0=hmms0,
-                                                algorithm='mean', rtol=rtol,
-                                                max_iter=max_iter, avails=avails1)
-        np.random.seed(n_of_launch)
-        hmm_trained2, _, iter2, n_of_best2 = \
-            ghmm.train_best_hmm_baumwelch(train_seqs2, hmms0_size, N, M, Z, hmms0=hmms0,
-                                                algorithm = 'mean', rtol=rtol,
-                                                max_iter=max_iter, avails=avails2)
-        if hmm_trained1 is None or hmm_trained2 is None:
-            ps_mean[step] += 0.0
-            pi_norms_mean[step] += 1.5
-            a_norms_mean[step] += 2.0
-            tau_norms_mean[step] += 2.0
-            mu_norms_mean[step] += 2.0
-            sig_norms_mean[step] += 2.0
-            class_percent_mean[step] += 50.0
-        else:
-            # diff between 1st trained model and 1st true model
-            diff_pi1 = np.linalg.norm(hmm_trained1._pi-hmm1._pi)           
-            diff_a1 = np.linalg.norm(hmm_trained1._a-hmm1._a)
-            diff_tau1 = np.linalg.norm(hmm_trained1._tau-hmm1._tau)
-            diff_mu1 = np.linalg.norm(hmm_trained1._mu-hmm1._mu)
-            diff_sig1 = np.linalg.norm(hmm_trained1._sig-hmm1._sig)
-            # diff between 2nd trained model and 2nd true model
-            diff_pi2 = np.linalg.norm(hmm_trained2._pi-hmm2._pi)           
-            diff_a2 = np.linalg.norm(hmm_trained2._a-hmm2._a)
-            diff_tau2 = np.linalg.norm(hmm_trained2._tau-hmm2._tau)
-            diff_mu2 = np.linalg.norm(hmm_trained2._mu-hmm2._mu)
-            diff_sig2 = np.linalg.norm(hmm_trained2._sig-hmm2._sig)
-            # some kind of average diff
-            #diff_a = (diff_a1 + diff_a2) / 2.0
-            #diff_b = (diff_b1 + diff_b2) / 2.0
-            print n_of_gaps
-            print "mean imputation"
-            print "model1"
-            print hmm_trained1._pi
-            print hmm_trained1._a
-            print hmm_trained1._tau
-            print hmm_trained1._mu
-            print hmm_trained1._sig
-            print "model2"
-            print hmm_trained2._pi
-            print hmm_trained2._a
-            print hmm_trained2._tau
-            print hmm_trained2._mu
-            print hmm_trained2._sig
-            loglikelihood1 = hmm_trained1.calc_likelihood(seqs_train1)
-            loglikelihood2 = hmm_trained2.calc_likelihood(seqs_train2)
-            print "loglikelihood: {} / {}".format(loglikelihood1, loglikelihood2)
-            print "loglikelihood true: {} / {}".format(loglikelihood_true1, loglikelihood_true2)
-            print "norm of pi diff = " + str(diff_pi1) + " / " + str(diff_pi2)
-            print "norm of A diff = " + str(diff_a1) + " / " + str(diff_a2)
-            print "norm of TAU diff = " + str(diff_tau1) + " / " + str(diff_tau2)
-            print "norm of MU diff = " + str(diff_mu1) + " / " + str(diff_mu2)
-            print "norm of SIG diff = " + str(diff_sig1) + " / " + str(diff_sig2)
-            print "Iterations: " + str(iter1) + " / " + str(iter2)
-            print "n_of_best: {} / {}".format(n_of_best1, n_of_best2)
-            # classification
-            class_res1 = ghmm.classify_seqs(seqs_class1, [hmm_trained1, hmm_trained2])
-            class_res2 = ghmm.classify_seqs(seqs_class2, [hmm_trained1, hmm_trained2])
-            percent = 100.0*(class_res1.count(0) + class_res2.count(1)) / (2.0*K_class)
-            # update
-            ps_mean[step] += loglikelihood1
-            pi_norms_mean[step] += diff_pi1
-            a_norms_mean[step] += diff_a1
-            tau_norms_mean[step] += diff_tau1
-            mu_norms_mean[step] += diff_mu1
-            sig_norms_mean[step] += diff_sig1
-            class_percent_mean[step] += percent
-            print str(percent) + " %"
-        print("--- %.1f minutes ---" % ((time.time()-start_time) / 60))
+        evaluate_training(ps_mean, pi_norms_mean, a_norms_mean, tau_norms_mean, 
+                          mu_norms_mean, sig_norms_mean, class_percent_mean,
+                          step, n_of_launch, start_time,
+                          hmm1, hmm2, seqs_train1, seqs_train2,
+                          train_seqs1, train_seqs2, hmms0_size, N, M, Z,
+                          hmms0, algorithm='mean', rtol=rtol,
+                          max_iter=max_iter, avails1=avails1, avails2=avails2,
+                          verbose=is_verbose)
         
         step += 1
 
 # get the average value
 class_percent_best /= number_of_launches
+
 ps_marg /= number_of_launches
 pi_norms_marg /= number_of_launches
 a_norms_marg /= number_of_launches
@@ -527,14 +348,6 @@ mu_norms_marg /= number_of_launches
 sig_norms_marg /= number_of_launches
 class_percent_marg /= number_of_launches
 
-ps_gluing /= number_of_launches
-pi_norms_gluing /= number_of_launches
-a_norms_gluing /= number_of_launches
-tau_norms_gluing /= number_of_launches
-mu_norms_gluing /= number_of_launches
-sig_norms_gluing /= number_of_launches
-class_percent_gluing /= number_of_launches
-
 ps_viterbi /= number_of_launches
 pi_norms_viterbi /= number_of_launches
 a_norms_viterbi /= number_of_launches
@@ -542,6 +355,14 @@ tau_norms_viterbi /= number_of_launches
 mu_norms_viterbi /= number_of_launches
 sig_norms_viterbi /= number_of_launches
 class_percent_viterbi /= number_of_launches
+
+ps_gluing /= number_of_launches
+pi_norms_gluing /= number_of_launches
+a_norms_gluing /= number_of_launches
+tau_norms_gluing /= number_of_launches
+mu_norms_gluing /= number_of_launches
+sig_norms_gluing /= number_of_launches
+class_percent_gluing /= number_of_launches
 
 ps_mean /= number_of_launches
 pi_norms_mean /= number_of_launches
@@ -561,6 +382,7 @@ plt.figure(figsize=(1920/96, 1000/96), dpi=96)
 
 ax1 = plt.subplot(421)
 plt.ylabel(u"Логарифм правдоподобия")
+plt.xlabel(u"Процент пропусков")
 line1=plt.plot(xs, ps_marg, '-', label=u"Маргинализация")
 line2=plt.plot(xs, ps_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
 line3=plt.plot(xs, ps_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
@@ -568,6 +390,7 @@ line4=plt.plot(xs, ps_mean, '-.', dash_capstyle='round', lw=2.0, label=u"Сре�
 
 ax2 = plt.subplot(422)
 plt.ylabel(r"$||\Pi - \Pi^*||$")
+plt.xlabel(u"Процент пропусков")
 line1=plt.plot(xs, pi_norms_marg, '-', label=u"Маргинализация")
 line2=plt.plot(xs, pi_norms_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
 line3=plt.plot(xs, pi_norms_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
@@ -575,6 +398,7 @@ line4=plt.plot(xs, pi_norms_mean, '-.', dash_capstyle='round', lw=2.0, label=u"�
 
 ax3 = plt.subplot(423, sharex=ax1)
 plt.ylabel(r"$||A - A^*||$")
+plt.xlabel(u"Процент пропусков")
 line1=plt.plot(xs, a_norms_marg, '-', label=u"Маргинализация")
 line2=plt.plot(xs, a_norms_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
 line3=plt.plot(xs, a_norms_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
@@ -582,6 +406,7 @@ line4=plt.plot(xs, a_norms_mean, '-.', dash_capstyle='round', lw=2.0, label=u"С
 
 ax4 = plt.subplot(424, sharex=ax2)
 plt.ylabel(r"$||\tau - \tau^*||$")
+plt.xlabel(u"Процент пропусков")
 line1=plt.plot(xs, tau_norms_marg, '-', label=u"Маргинализация")
 line2=plt.plot(xs, tau_norms_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
 line3=plt.plot(xs, tau_norms_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
@@ -589,6 +414,7 @@ line4=plt.plot(xs, tau_norms_mean, '-.', dash_capstyle='round', lw=2.0, label=u"
 
 ax5 = plt.subplot(425, sharex=ax1)
 plt.ylabel(r"$||\mu - \mu^*||$")
+plt.xlabel(u"Процент пропусков")
 line1=plt.plot(xs, mu_norms_marg, '-', label=u"Маргинализация")
 line2=plt.plot(xs, mu_norms_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
 line3=plt.plot(xs, mu_norms_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
@@ -596,6 +422,7 @@ line4=plt.plot(xs, mu_norms_mean, '-.', dash_capstyle='round', lw=2.0, label=u"�
 
 ax6 = plt.subplot(426, sharex=ax2)
 plt.ylabel(r"$||\Sigma - \Sigma^*||$")
+plt.xlabel(u"Процент пропусков")
 line1=plt.plot(xs, sig_norms_marg, '-', label=u"Маргинализация")
 line2=plt.plot(xs, sig_norms_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
 line3=plt.plot(xs, sig_norms_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
@@ -603,6 +430,7 @@ line4=plt.plot(xs, sig_norms_mean, '-.', dash_capstyle='round', lw=2.0, label=u"
 
 ax7 = plt.subplot(427, sharex=ax1)
 plt.ylabel(u"Верно распознанные, %")
+plt.xlabel(u"Процент пропусков")
 line1=plt.plot(xs, class_percent_marg, '-', label=u"Маргинализация")
 line2=plt.plot(xs, class_percent_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
 line3=plt.plot(xs, class_percent_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
