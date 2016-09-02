@@ -675,6 +675,9 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, algorithm='marginalizati
         "Invalid algorithm '{}'".format(algorithm)
     if hmms0 is None:
         mu_est, sig_est = estimate_mu_sig(seqs, N, M, Z, avails)
+        if verbose:
+            print "mu_est: {}".format(mu_est)
+            print "sig_est: {}".format(sig_est)
         hmms = [GHMM(N,M,Z,mu_est,sig_est,seed=np.random.randint(10000))
                     for i in range(hmms0_size-1)]       
         # standard pi, a, tau parameters
@@ -745,7 +748,7 @@ def estimate_mu_sig(seqs, N, M, Z, avails=None):
     # TODO: add more clever heuristics to this procedure
     K = len(seqs)
     if avails is None:
-        avails = [np.full(shape=seqs[k].shape[0], fill_value=True) for k in range(K)]
+        avails = [np.full(shape=seqs[k].shape[0], fill_value=True, dtype=np.bool) for k in range(K)]
     mu = np.empty((N*M,Z))
     sig = np.empty((N,M,Z,Z))
     min_val = np.min([np.min(seqs[k][avails[k]], axis=0) for k in range(K)], axis=0)
@@ -753,7 +756,7 @@ def estimate_mu_sig(seqs, N, M, Z, avails=None):
     step = (max_val - min_val) / (N*M)
     val = min_val + step/2.0
     for i in range(N*M):
-        mu[i] += val
+        mu[i] = val
         val += step
     mu = np.reshape(mu, newshape=(N,M,Z))
     # TODO: scale sig matrixes
