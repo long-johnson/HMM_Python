@@ -790,6 +790,67 @@ def classify_seqs(seqs, hmms):
                 label_max = label
         predictions.append(label_max)
     return predictions
+    
+def estimate_hmm_params_by_seq_and_states(mu, sig, seqs, state_seqs):
+    """ to check that sequences agrees with hmm produced it
+    
+    Parameters
+    ----------
+    mu : float 3darray (NxMxZ)
+        means of normal distributions
+    sig : float 4darray (NxMxZ)
+        covariation matrix of normal distributions
+    seq : float 2darray (TxZ)
+        generated sequence
+    states : int 1darray (T)
+        hidden states appeared during generation
+    """
+    N, M, Z = mu.shape
+    K = len(seqs)
+    pi = np.zeros(N)
+    a = np.zeros(shape=(N,N))
+    tau = np.zeros(shape=(N,M))
+    for k in range(K):
+        pi_, a_, tau_ = \
+            _estimate_hmm_params_by_seq_and_states(mu, sig, seqs[k], state_seqs[k])
+        pi += pi_
+        a += a_
+        tau += tau_
+    return pi/K, a/K, tau/K
+
+def _estimate_hmm_params_by_seq_and_states(mu, sig, seq, state_seq):
+    N, M, Z = mu.shape
+    T = seq.shape[0]
+    pi = np.zeros(N)
+    a = np.zeros(shape=(N,N))
+    tau = np.zeros(shape=(N,M))
+    # estimate pi
+    scores = np.empty(shape=(N,M))
+    for n in range(N):
+        for m in range(M):
+            scores[n, m] = \
+                sp.stats.multivariate_normal.pdf(seq[0], mu[n,m], sig[n,m])
+    #state = np.argmax(np.sum(scores, axis=1))
+    state = state_seq[0]
+    pi[state] = 1.0
+    mixture = np.argmax(scores[state])
+    tau[state, mixture] += 1.0
+    # estimate a
+    state_prev = state
+    for t in range(1,T):
+        for n in range(N):
+            for m in range(M):
+                scores[n, m] = \
+                    sp.stats.multivariate_normal.pdf(seq[t], mu[n,m], sig[n,m])
+        #state = np.argmax(np.sum(scores, axis=1))
+        state = state_seq[t]
+        a[state_prev, state] += 1.0
+        mixture = np.argmax(scores[state])
+        tau[state, mixture] += 1.0
+        state_prev = state
+    a = (a.T / np.sum(a, axis=1)).T
+    tau = (tau.T / np.sum(tau, axis=1)).T
+    return pi, a, tau
 
 def _generate_discrete_distribution(n):
     """ Generate n values > 0.0, whose sum equals 1.0
