@@ -2,8 +2,8 @@
 
 import numpy as np
 import scipy as sp
-from scipy import stats
 import copy
+from itertools import product
 import StandardImputationMethods as imp
 
 class GHMM:
@@ -199,16 +199,13 @@ class GHMM:
             if avail[t]:
                 for i in range(N):
                     for m in range(M):
-                        temp = sp.stats.multivariate_normal.pdf(seq[t], mu[i,m], sig[i,m],
-                        temp = sp.stats.multivariate_normal.pdf(seq[t], mu[i,m], sig[i,m], allow_singular=True)
+                        temp = _my_multivariate_normal_pdf(seq[t], mu[i,m], sig[i,m])
                         if temp == 0.0:
                             temp = 1.0e-200 # to prevent underflow
                         g[t, i, m] = temp
             else:
-                g[t,:,:] = 1.0 # TODO: decide: nan or 1.0 ?
+                g[t,:,:] = 1.0
         b = np.sum(tau * g, axis=2)
-        # set Bs that correspond to missing values to 1.0
-        #b[np.logical_not(avail),:] = 1.0
         return b, g
     
     def _calc_forward_scaled(self, b):
@@ -423,9 +420,48 @@ class GHMM:
                                            #instead of np.outer()
             # sig re-estimation
             self._sig = sig_up / mu_sig_down[:,:,np.newaxis,np.newaxis]
+            # remove mixture components with singular covariance matrix and
+            # states where all mixtures were removed, then readjust probabilities
+            self.normalize()
             iteration += 1
         likelihood = self.calc_likelihood(seqs, avails)
         return likelihood, iteration
+        
+    def normalize(self):
+        """ remove mixture components with singular covariance matrix and
+        states where all mixtures were removed, then readjust probabilities
+        """
+        N = self._n
+        M = self._m
+        pi = self._pi
+        a = self._a
+        tau = self._tau
+        sig = self._sig
+        for i, m in product(range(N), range(M)):
+            if _is_singular(sig[i,m]):
+                # save the weight and then redistribute it
+                temp = tau[i,m]
+                tau[i,m] = 0.0
+                idx_nonzeros = np.nonzero(tau[i,:])
+                count_nonzeros = idx_nonzeros.size
+                if count_nonzeros >= 1:
+                    # redistribute weights
+                    tau[i,idx_nonzeros] += temp / idx_nonzeros.size
+                else:
+                    # throw out state with deleted mixtures
+                    temp = pi[i]
+                    pi[i] = 0.0
+                    idx_nonzeros = np.nonzero(pi)
+                    pi[idx_nonzeros] += temp / idx_nonzeros.size
+                    # nullify inbound transitions and redistribute probs
+                    for j in range(N):
+                        temp = a[j,i]
+                        a[j,i] = 0.0
+                        idx_nonzeros = np.nonzero(pi)
+                        a[j,idx_nonzeros] += temp / idx_nonzeros.size
+                    # nullify outbound transitions
+                    a[i,:] = 0.0
+        pass
         
     def decode_viterbi(self, seqs, avails):
         """ Infer the sequence of hidden states that were reached during generation
@@ -521,9 +557,9 @@ class GHMM:
             for t in np.where(avail==False)[0]:
                 # calc pdfs for each mixture component
                 for m in range(M):
-                    pdfs[m] = sp.stats.multivariate_normal.pdf(
-                                seq[t], mu[states[t],m], sig[states[t],m],
-                                allow_singular=True)
+                    pdfs[m] = _my_multivariate_normal_pdf(seq[t], 
+                                                          mu[states[t],m],
+                                                          sig[states[t],m])
                 # select mean of mixture component that gave the maximum pdf
                 seq[t] = mu[states[t], np.argmax(pdfs)]
         return seqs
@@ -838,8 +874,9 @@ def _estimate_hmm_params_by_seq_and_states(mu, sig, seq, state_seq):
     scores = np.empty(shape=(N,M))
     for n in range(N):
         for m in range(M):
+            # TODO: optimize
             scores[n, m] = \
-                sp.stats.multivariate_normal.pdf(seq[0], mu[n,m], sig[n,m])
+                _my_multivariate_normal_pdf(seq[0], mu[n,m], sig[n,m])
     #state = np.argmax(np.sum(scores, axis=1))
     state = state_seq[0]
     pi[state] = 1.0
@@ -850,8 +887,9 @@ def _estimate_hmm_params_by_seq_and_states(mu, sig, seq, state_seq):
     for t in range(1,T):
         for n in range(N):
             for m in range(M):
+                # TODO: optimize
                 scores[n, m] = \
-                    sp.stats.multivariate_normal.pdf(seq[t], mu[n,m], sig[n,m])
+                    _my_multivariate_normal_pdf(seq[t], mu[n,m], sig[n,m])
         #state = np.argmax(np.sum(scores, axis=1))
         state = state_seq[t]
         a[state_prev, state] += 1.0
@@ -865,7 +903,7 @@ def _estimate_hmm_params_by_seq_and_states(mu, sig, seq, state_seq):
 def _generate_discrete_distribution(n):
     """ Generate n values > 0.0, whose sum equals 1.0
     """
-    xs = np.array(stats.uniform.rvs(size=n))
+    xs = np.array(sp.stats.uniform.rvs(size=n))
     return xs / np.sum(xs)
     
 def _get_sample_discrete_distr(distr):
@@ -909,3 +947,12 @@ def _my_multivariate_normal_pdf(x, mu, cov, cov_is_diagonal=False):
         part2 = -0.5 * np.dot(np.dot(diff, cov_inv), diff)
         return part1 * np.exp(part2)
 
+def _is_singular(x):
+    """ Effectively checks whether square matrix is singular.
+    Is faster than linalg.cond(x) < 1.0 / sys.float_info.epsilon
+    """
+    try:
+        np.linalg.inv(x)
+    except np.linalg.LinAlgError:
+        return True
+    return False
