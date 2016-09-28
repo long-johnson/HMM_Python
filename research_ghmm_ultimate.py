@@ -11,22 +11,23 @@ import GaussianHMM as ghmm
 import StandardImputationMethods as stdimp
 
 # experiment parameters
+n_of_launches = 5
 T = 100
-K_train = 1
-K_class = 1
-rtol=1e-2
-max_iter=1
+K_train = 100
+K_class = 100
+rtol = 1e-5
+max_iter = 100
 hmms0_size = 1
 sig_val = 0.1
 dA = 0.2
-number_of_launches = 5
 use_predefined_hmms0 = False
 is_gaps_places_different = True
 is_verbose = False
+is_using_true_hmm_for_hmms0 = False
 
 filename = "ultimate"+"_dA"+str(dA)+"_t"+str(T)+"_k"+str(K_train)+"_initrand"+\
     str(hmms0_size*np.logical_not(use_predefined_hmms0))\
-    +"_rtol"+str(rtol)+"_iter"+str(max_iter)+"_x"+str(number_of_launches)
+    +"_rtol"+str(rtol)+"_iter"+str(max_iter)+"_x"+str(n_of_launches)
 #gaps_range = range(0,T,T/10)
 #gaps_range = range(0,100,25) + range(100,600,50) + [575] + [590]
 gaps_range = range(0,100,10)
@@ -50,7 +51,7 @@ N, M = tau.shape
 sig = np.empty((N,M,Z,Z))
 for n in range(N):
     for m in range(M):
-        sig[n,m,:,:] = np.eye(Z)
+        sig[n,m,:,:] = np.eye(Z) * sig_val
 hmm1 = ghmm.GHMM(N, M, Z, mu, sig, pi=pi, a=a, tau=tau)
 
 # hmm 2
@@ -71,7 +72,7 @@ N, M = tau.shape
 sig = np.empty((N,M,Z,Z))
 for n in range(N):
     for m in range(M):
-        sig[n,m,:,:] = np.eye(Z)
+        sig[n,m,:,:] = np.eye(Z) * sig_val
 hmm2 = ghmm.GHMM(N, M, Z, mu, sig, pi=pi, a=a, tau=tau)
 
 # hmm0 (predefined hmm)
@@ -125,6 +126,9 @@ def evaluate_training(ps, pi_norms, a_norms, tau_norms, mu_norms, sig_norms,
         mu_norms[step] += 2.0
         sig_norms[step] += 2.0
         class_percent[step] += 50.0
+        with open("log.txt", "a") as f:
+            f.write("n_of_launch={}, n_of_gaps={}: hmm_trained1 is None = {}, hm_trained2 is None = {}\n",
+                    n_of_launch, n_of_gaps, hmm_trained1 is None, hmm_trained2 is None)
     else:
         # diff between 1st trained model and 1st true model
         diff_pi1 = np.linalg.norm(hmm_trained1._pi-hmm1._pi)           
@@ -142,19 +146,11 @@ def evaluate_training(ps, pi_norms, a_norms, tau_norms, mu_norms, sig_norms,
         #diff_a = (diff_a1 + diff_a2) / 2.0
         #diff_b = (diff_b1 + diff_b2) / 2.0
         print "n_of_gaps " + str(n_of_gaps)
-        print "Marginalization"
+        print algorithm
         print "model1"
-        print hmm_trained1._pi
-        print hmm_trained1._a
-        print hmm_trained1._tau
-        print hmm_trained1._mu
-        print hmm_trained1._sig
+        print str(hmm_trained1)
         print "model2"
-        print hmm_trained2._pi
-        print hmm_trained2._a
-        print hmm_trained2._tau
-        print hmm_trained2._mu
-        print hmm_trained2._sig
+        print str(hmm_trained2)
         loglikelihood1 = hmm_trained1.calc_likelihood(seqs_train1)
         loglikelihood2 = hmm_trained2.calc_likelihood(seqs_train2)
         print "loglikelihood: {} / {}".format(loglikelihood1, loglikelihood2)
@@ -164,7 +160,6 @@ def evaluate_training(ps, pi_norms, a_norms, tau_norms, mu_norms, sig_norms,
         print "norm of TAU diff = " + str(diff_tau1) + " / " + str(diff_tau2)
         print "norm of MU diff = " + str(diff_mu1) + " / " + str(diff_mu2)
         print "norm of SIG diff = " + str(diff_sig1) + " / " + str(diff_sig2)
-        print "loglikelihood"
         print "Iterations: " + str(iter1) + " / " + str(iter2)
         print "n_of_best: {} / {}".format(n_of_best1, n_of_best2)
         # classification
@@ -182,7 +177,6 @@ def evaluate_training(ps, pi_norms, a_norms, tau_norms, mu_norms, sig_norms,
         print str(percent) + " %"
     print("--- %.1f minutes ---" % ((time.time()-start_time) / 60))
 
-
 #
 # research
 #
@@ -192,8 +186,10 @@ if use_predefined_hmms0:
 else:
     hmms0 = None
 # prepare variables to accumulate experiment data
+# TODO: make a routine?
 xs = gaps_range
 class_percent_best = np.full(len(gaps_range), 0.0) # if classified by true models
+p_true = 0.0 # loglikelihood on true model for complete sequences
 # marginalization
 ps_marg = np.full(len(gaps_range), 0.0)
 pi_norms_marg = np.full(len(gaps_range), 0.0)
@@ -228,12 +224,20 @@ sig_norms_mean = np.full(len(gaps_range), 0.0)
 class_percent_mean = np.full(len(gaps_range), 0.0)
 
 # make several launches
-for n_of_launch in range(number_of_launches):
-    # generate new sequence
+for n_of_launch in range(n_of_launches):
+    # generate new training sequences
     seqs_train1, state_seqs_train1 = hmm1.generate_sequences(K_train, T, seed=n_of_launch)
     seqs_train2, state_seqs_train2 = hmm2.generate_sequences(K_train, T, seed=n_of_launch)
+    # generate new sequences to classify
+    seqs_class1, _ = hmm1.generate_sequences(K_class, T, seed=n_of_launch)
+    seqs_class2, _ = hmm2.generate_sequences(K_class, T, seed=n_of_launch)
+    # estimate the best likelihood (by true models)
+    loglikelihood_true1 = hmm1.calc_likelihood(seqs_train1)
+    loglikelihood_true2 = hmm2.calc_likelihood(seqs_train2)
+    p_true += loglikelihood_true1
     
     # prepare indices in sequence array to dissapear
+    # TODO: make a routine!
     to_dissapears1 = []
     to_dissapears2 = []
     np.random.seed(n_of_launch)
@@ -255,18 +259,13 @@ for n_of_launch in range(number_of_launches):
         for k in range(K_train):
             to_dissapears1.append(to_dissapear1)
             to_dissapears2.append(to_dissapear2)
-    # generate sequences to classify
-    seqs_class1, _ = hmm1.generate_sequences(K_class, T, seed=n_of_launch)
-    seqs_class2, _ = hmm2.generate_sequences(K_class, T, seed=n_of_launch)
     
-    loglikelihood_true1 = hmm1.calc_likelihood(seqs_train1)
-    loglikelihood_true2 = hmm2.calc_likelihood(seqs_train2)
         
     # the experiment
     step = 0
     for n_of_gaps in gaps_range:
         # mark some elements as missing.
-        # array to set missing obserations
+        # TODO: make a routine!
         # hmm 1
         avails1 = [np.full(seqs_train1[k].shape[0], True, dtype=np.bool) for k in range(K_train)]
         train_seqs1 = [np.array(seqs_train1[k]) for k in range(K_train)]
@@ -334,43 +333,44 @@ for n_of_launch in range(number_of_launches):
                           hmms0, algorithm='mean', rtol=rtol,
                           max_iter=max_iter, avails1=avails1, avails2=avails2,
                           verbose=is_verbose)
-        
         step += 1
 
 # get the average value
-class_percent_best /= number_of_launches
+class_percent_best /= n_of_launches
+p_true /= n_of_launches
+ps_true = np.full(len(gaps_range), fill_value=p_true)
 
-ps_marg /= number_of_launches
-pi_norms_marg /= number_of_launches
-a_norms_marg /= number_of_launches
-tau_norms_marg /= number_of_launches
-mu_norms_marg /= number_of_launches
-sig_norms_marg /= number_of_launches
-class_percent_marg /= number_of_launches
+ps_marg /= n_of_launches
+pi_norms_marg /= n_of_launches
+a_norms_marg /= n_of_launches
+tau_norms_marg /= n_of_launches
+mu_norms_marg /= n_of_launches
+sig_norms_marg /= n_of_launches
+class_percent_marg /= n_of_launches
 
-ps_viterbi /= number_of_launches
-pi_norms_viterbi /= number_of_launches
-a_norms_viterbi /= number_of_launches
-tau_norms_viterbi /= number_of_launches
-mu_norms_viterbi /= number_of_launches
-sig_norms_viterbi /= number_of_launches
-class_percent_viterbi /= number_of_launches
+ps_viterbi /= n_of_launches
+pi_norms_viterbi /= n_of_launches
+a_norms_viterbi /= n_of_launches
+tau_norms_viterbi /= n_of_launches
+mu_norms_viterbi /= n_of_launches
+sig_norms_viterbi /= n_of_launches
+class_percent_viterbi /= n_of_launches
 
-ps_gluing /= number_of_launches
-pi_norms_gluing /= number_of_launches
-a_norms_gluing /= number_of_launches
-tau_norms_gluing /= number_of_launches
-mu_norms_gluing /= number_of_launches
-sig_norms_gluing /= number_of_launches
-class_percent_gluing /= number_of_launches
+ps_gluing /= n_of_launches
+pi_norms_gluing /= n_of_launches
+a_norms_gluing /= n_of_launches
+tau_norms_gluing /= n_of_launches
+mu_norms_gluing /= n_of_launches
+sig_norms_gluing /= n_of_launches
+class_percent_gluing /= n_of_launches
 
-ps_mean /= number_of_launches
-pi_norms_mean /= number_of_launches
-a_norms_mean /= number_of_launches
-tau_norms_mean /= number_of_launches
-mu_norms_mean /= number_of_launches
-sig_norms_mean /= number_of_launches
-class_percent_mean /= number_of_launches
+ps_mean /= n_of_launches
+pi_norms_mean /= n_of_launches
+a_norms_mean /= n_of_launches
+tau_norms_mean /= n_of_launches
+mu_norms_mean /= n_of_launches
+sig_norms_mean /= n_of_launches
+class_percent_mean /= n_of_launches
 
 # plot all this
 mpl.rcdefaults()
@@ -380,13 +380,29 @@ mpl.rc('font',**font)
 mpl.rc('font', size=12)
 plt.figure(figsize=(1920/96, 1000/96), dpi=96)
 
+suptitle = u"Исследование алгоритмов обучения СММ по посл-тям с пропусками "\
+           u"Число скрытых состояний N = {}, число смесей M = {}, "\
+           u"Размерность наблюдений Z = {}, \n"\
+           u"число обучающих последовательностей K_train = {}, "\
+           u"длина обучающих последовательностей T = {}, \n"\
+           u"число начальных приближений = {}, "\
+           u"относительная невязка для останова алгоритма rtol = {}, "\
+           u"максимальное число итераций iter = {}, " \
+           u"число запусков эксперимента n_of_launches = {} \n"\
+           u"в качестве начального приближения взята истинная модель = {}"\
+           .format(N, M, Z, K_train, T, hmms0_size, rtol, max_iter, n_of_launches,
+                    is_using_true_hmm_for_hmms0)
+plt.suptitle(suptitle)
+
 ax1 = plt.subplot(421)
 plt.ylabel(u"Логарифм правдоподобия")
 plt.xlabel(u"Процент пропусков")
+
 line1=plt.plot(xs, ps_marg, '-', label=u"Маргинализация")
 line2=plt.plot(xs, ps_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
 line3=plt.plot(xs, ps_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
 line4=plt.plot(xs, ps_mean, '-.', dash_capstyle='round', lw=2.0, label=u"Среднее")
+line5=plt.plot(xs, ps_true, '-', label=u"Истинная СММ без пропусков")
 
 ax2 = plt.subplot(422)
 plt.ylabel(r"$||\Pi - \Pi^*||$")
@@ -435,7 +451,7 @@ line1=plt.plot(xs, class_percent_marg, '-', label=u"Маргинализация
 line2=plt.plot(xs, class_percent_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
 line3=plt.plot(xs, class_percent_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
 line4=plt.plot(xs, class_percent_mean, '-.', dash_capstyle='round', lw=2.0, label=u"Среднее")
-line5 = plt.plot(xs, class_percent_best, '-.', dash_capstyle='round',  lw=2.0, label=u"Истинные модели")
+line5 = plt.plot(xs, class_percent_best, '-', dash_capstyle='round',  lw=2.0, label=u"Истинные модели")
 
 plt.figlegend((line1[0], line2[0], line3[0], line4[0], line5[0]), 
               (u"Маргинализация",u"Склеивание",u"Витерби", u"Среднее", u"Истинные модели"),
@@ -443,9 +459,13 @@ plt.figlegend((line1[0], line2[0], line3[0], line4[0], line5[0]),
 #plt.tight_layout(pad=0.0,h_pad=0.01)
 plt.show()
 
+filename = "research0_gauss_N={}_M={}_Z={}_Ktrain={}_T={}_hmms0_size={}_rtol={}_iter={}_launches={}_"\
+           "truehmm0={}"\
+            .format(N, M, Z, K_train, T, hmms0_size, rtol, max_iter, n_of_launches, 
+                    is_using_true_hmm_for_hmms0)
 plt.savefig(filename+".png")
 
-to_file = np.asarray([xs,ps_marg, ps_gluing, ps_viterbi, ps_mean,
+to_file = np.asarray([xs,ps_true,ps_marg, ps_gluing, ps_viterbi, ps_mean,
                       pi_norms_marg, pi_norms_gluing, pi_norms_viterbi, pi_norms_mean,
                       a_norms_marg, a_norms_gluing, a_norms_viterbi, a_norms_mean,
                       tau_norms_marg, tau_norms_gluing, tau_norms_viterbi, tau_norms_mean,
@@ -453,7 +473,7 @@ to_file = np.asarray([xs,ps_marg, ps_gluing, ps_viterbi, ps_mean,
                       sig_norms_marg, sig_norms_gluing, sig_norms_viterbi, sig_norms_mean,
                       class_percent_marg, class_percent_gluing, class_percent_viterbi, class_percent_mean])
 np.savetxt(filename+".csv", to_file.T, delimiter=';', 
-           header="xs;ps_marg;ps_gluing;ps_viterbi;ps_mean;"
+           header="xs;ps_true;ps_marg;ps_gluing;ps_viterbi;ps_mean;"
                   "pi_norms_marg;pi_norms_gluing;pi_norms_viterbi;pi_norms_mean;"
                   "a_norms_marg;a_norms_gluing;a_norms_viterbi;a_norms_mean;"
                   "tau_norms_marg;tau_norms_gluing;tau_norms_viterbi;tau_norms_mean;"

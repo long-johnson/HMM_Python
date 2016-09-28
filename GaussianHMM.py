@@ -88,6 +88,13 @@ class GHMM:
         self._mu = np.array(mu)
         self._sig = np.array(sig)
         
+    def __str__(self):
+        return "pi\n{}\n".format(self._pi) + \
+               "a\n{}\n".format(self._a) + \
+               "tau\n{}\n".format(self._tau) + \
+               "mu\n{}\n".format(self._mu) + \
+               "sig\n{}\n".format(self._sig)
+        
     def generate_sequences(self, K, T, seed=None):
         """
         Generate sequences of observations produced by this model
