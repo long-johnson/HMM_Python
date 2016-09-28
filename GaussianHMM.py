@@ -193,7 +193,7 @@ class GHMM:
                 for i in range(N):
                     for m in range(M):
                         temp = sp.stats.multivariate_normal.pdf(seq[t], mu[i,m], sig[i,m],
-                                                                allow_singular=True)
+                        temp = sp.stats.multivariate_normal.pdf(seq[t], mu[i,m], sig[i,m], allow_singular=True)
                         if temp == 0.0:
                             temp = 1.0e-200 # to prevent underflow
                         g[t, i, m] = temp
@@ -872,4 +872,33 @@ def _get_sample_discrete_distr(distr):
         if val < cum:
             return i
     return distr.size-1
+    
+def _my_multivariate_normal_pdf(x, mu, cov, cov_is_diagonal=False):
+        """
+        Calcs pdf of multivariate normal distribution.
+        Doesn't allow singular covariation matrixes.
+        
+        Parameters
+        ----------
+        cov_is_diagonal : bool
+            if True then cov is considered to be a diagonal matrix (more effective)
+            
+        Returns
+        -------
+        pdf : float64
+            pdf of multivariate normal distribution at point x
+        """
+        k = x.size
+        if cov_is_diagonal:
+            diag = np.diag(cov)
+            det = np.prod(diag)
+            diag = 1.0 / diag
+            cov_inv = np.diag(diag)
+        else:
+            det = np.linalg.det(cov)
+            cov_inv = np.linalg.inv(cov)
+        diff = x - mu        
+        part1 = 1.0 / (np.sqrt((2.0*np.pi)**k * det))
+        part2 = -0.5 * np.dot(np.dot(diff, cov_inv), diff)
+        return part1 * np.exp(part2)
 
