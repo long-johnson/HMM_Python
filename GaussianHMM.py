@@ -591,8 +591,10 @@ class GHMM:
                                                           mu[states[t],m],
                                                           sig[states[t],m],
                                                           cov_is_diagonal = is_cov_diagonal)
-                # select mean of mixture component that gave the maximum pdf
-                seq[t] = mu[states[t], np.argmax(pdfs)]
+                argmax_pdfs = np.argmax(pdfs)
+                # sample from a mixture that gave the maximum pdf
+                seq[t] = np.random.multivariate_normal(mu[states[t], argmax_pdfs],
+                                                       sig[states[t], argmax_pdfs])
         return seqs
     
     def train_bauwelch_impute_viterbi(self, seqs, rtol, max_iter, avails, 
