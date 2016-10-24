@@ -575,26 +575,19 @@ class GHMM:
         """
         seqs = copy.deepcopy(seqs_)
         K = len(seqs)
-        M = self._m
         mu = self._mu
         sig = self._sig
+        tau = self._tau
         global is_cov_diagonal
         for k in range(K):
-            seq = seqs[k]
             avail = avails[k]
-            pdfs = np.empty((M))
             states = states_list[k]
             for t in np.where(avail==False)[0]:
-                # calc pdfs for each mixture component
-                for m in range(M):
-                    pdfs[m] = _my_multivariate_normal_pdf(seq[t], 
-                                                          mu[states[t],m],
-                                                          sig[states[t],m],
-                                                          cov_is_diagonal = is_cov_diagonal)
-                argmax_pdfs = np.argmax(pdfs)
-                # sample from a mixture that gave the maximum pdf
-                seq[t] = np.random.multivariate_normal(mu[states[t], argmax_pdfs],
-                                                       sig[states[t], argmax_pdfs])
+                # impute gaps by drawing from a mixture of multinormal distributions
+                state = states[t]
+                mix_component = _get_sample_discrete_distr(tau[state,:])
+                seqs[t] = np.random.multivariate_normal(mu[states, mix_component],
+                                                        sig[states, mix_component])
         return seqs
     
     def train_bauwelch_impute_viterbi(self, seqs, rtol, max_iter, avails, 
