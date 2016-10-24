@@ -2,9 +2,13 @@
 
 import numpy as np
 import scipy as sp
+import scipy.stats
 import copy
 from itertools import product
 import StandardImputationMethods as imp
+
+# global parameter
+is_cov_diagonal = False
 
 class GHMM:
     """Implementation of Hidden Markov Model where observation density is
@@ -58,6 +62,8 @@ class GHMM:
         self._n = n
         self._m = m
         self._z = z
+        # states that were not eliminated from hmm
+        self._avail_states = np.full(n, True, dtype=np.bool)
         # if parameters are not defined - give them some statistically correct
         # default values or generated randomly if seed is provided
         if pi is not None:
@@ -195,14 +201,19 @@ class GHMM:
         sig = self._sig
         tau = self._tau
         g = np.empty((T, N, M))
+        global is_cov_diagonal
         for t in range(T):
             if avail[t]:
                 for i in range(N):
                     for m in range(M):
-                        temp = _my_multivariate_normal_pdf(seq[t], mu[i,m], sig[i,m])
-                        if temp == 0.0:
-                            temp = 1.0e-200 # to prevent underflow
-                        g[t, i, m] = temp
+                        if (tau[i,m] != 0.0):
+                            temp = _my_multivariate_normal_pdf(seq[t], mu[i,m], sig[i,m], 
+                                                               cov_is_diagonal = is_cov_diagonal)
+                            if temp == 0.0:
+                                temp = 1.0e-200 # to prevent underflow
+                            g[t, i, m] = temp
+                        else:
+                            g[t, i, m] = 0.0
             else:
                 g[t,:,:] = 1.0
         b = np.sum(tau * g, axis=2)
@@ -331,6 +342,8 @@ class GHMM:
         tau = self._tau
         gamma_m = np.empty(shape=(T-1, N, M))
         gamma_m = g[:-1,:,:] * tau * gamma[:,:, np.newaxis] / b[:-1,:,np.newaxis]
+        # nullify probs for eliminated states
+        gamma_m[:-1, np.logical_not(self._avail_states), :] = 0.0
         return gamma_m
     
     def train_baumwelch(self, seqs, rtol, max_iter, avails=None):
@@ -382,6 +395,7 @@ class GHMM:
                 seq = seqs[k]
                 avail = avails[k] if avails is not None \
                                   else np.full(seq.shape[0], True, dtype=np.bool)
+                avail_t = avail[:-1]
                 b, g = self._calc_b(seq, avail)
                 p, alpha, c = self._calc_forward_scaled(b)
                 beta = self._calc_backward_scaled(b, c)
@@ -393,10 +407,10 @@ class GHMM:
                 pi_up += gamma[0,:]
                 a_up += np.sum(xi, axis=0)
                 a_down += np.sum(gamma, axis=0)                
-                tau_up += np.sum(gamma_ms[k][avail], axis=0)
-                tau_down += np.sum(gamma[avail], axis=0)  
-                mu_up += np.einsum('tnm,tz->nmz', gamma_ms[k][avail], seq[avail])
-                mu_sig_down += np.sum(gamma_ms[k][avail], axis=0)
+                tau_up += np.sum(gamma_ms[k][avail_t], axis=0)
+                tau_down += np.sum(gamma[avail_t], axis=0)  
+                mu_up += np.einsum('tnm,tz->nmz', gamma_ms[k][avail_t], seq[avail])
+                mu_sig_down += np.sum(gamma_ms[k][avail_t], axis=0)
                 avail[-1] = temp_avail_last  # to restore original value
             # re-estimation
             self._pi = pi_up / K
@@ -420,8 +434,10 @@ class GHMM:
                                            #instead of np.outer()
             # sig re-estimation
             self._sig = sig_up / mu_sig_down[:,:,np.newaxis,np.newaxis]
+            #print "iter = {}\nhmm params = {}\n".format(iteration, str(self))
             # remove mixture components with singular covariance matrix and
             # states where all mixtures were removed, then readjust probabilities
+         
             self.normalize()
             iteration += 1
         likelihood = self.calc_likelihood(seqs, avails)
@@ -436,32 +452,45 @@ class GHMM:
         pi = self._pi
         a = self._a
         tau = self._tau
+        mu = self._mu
         sig = self._sig
+        global is_cov_diagonal
+        
+        pi[np.isnan(self._pi)] = 0.0
+        a[np.isnan(self._a)] = 0.0
+        tau[np.isnan(self._tau)] = 0.0
+        mu[np.isnan(self._mu)] = 0.0
+        sig[np.isnan(self._sig)] = 0.0
+        
+        if is_cov_diagonal: 
+            for i, m in product(range(N), range(M)):
+                # make covariances diagonal again!
+                sig[i,m] = np.diag(np.diag(sig[i,m]))
         for i, m in product(range(N), range(M)):
-            if _is_singular(sig[i,m]):
+            if self._avail_states[i] and tau[i,m] != 0.0 and _is_singular(sig[i,m]):
                 # save the weight and then redistribute it
                 temp = tau[i,m]
                 tau[i,m] = 0.0
-                idx_nonzeros = np.nonzero(tau[i,:])
+                idx_nonzeros = np.nonzero(tau[i,:])[0]
                 count_nonzeros = idx_nonzeros.size
                 if count_nonzeros >= 1:
                     # redistribute weights
                     tau[i,idx_nonzeros] += temp / idx_nonzeros.size
                 else:
                     # throw out state with deleted mixtures
+                    self._avail_states[i] = False
                     temp = pi[i]
                     pi[i] = 0.0
-                    idx_nonzeros = np.nonzero(pi)
+                    idx_nonzeros = np.nonzero(pi)[0]
                     pi[idx_nonzeros] += temp / idx_nonzeros.size
                     # nullify inbound transitions and redistribute probs
                     for j in range(N):
                         temp = a[j,i]
                         a[j,i] = 0.0
-                        idx_nonzeros = np.nonzero(pi)
+                        idx_nonzeros = np.nonzero(pi)[0]
                         a[j,idx_nonzeros] += temp / idx_nonzeros.size
                     # nullify outbound transitions
                     a[i,:] = 0.0
-        pass
         
     def decode_viterbi(self, seqs, avails):
         """ Infer the sequence of hidden states that were reached during generation
@@ -549,6 +578,7 @@ class GHMM:
         M = self._m
         mu = self._mu
         sig = self._sig
+        global is_cov_diagonal
         for k in range(K):
             seq = seqs[k]
             avail = avails[k]
@@ -559,7 +589,8 @@ class GHMM:
                 for m in range(M):
                     pdfs[m] = _my_multivariate_normal_pdf(seq[t], 
                                                           mu[states[t],m],
-                                                          sig[states[t],m])
+                                                          sig[states[t],m],
+                                                          cov_is_diagonal = is_cov_diagonal)
                 # select mean of mixture component that gave the maximum pdf
                 seq[t] = mu[states[t], np.argmax(pdfs)]
         return seqs
@@ -594,16 +625,18 @@ class GHMM:
         """
         # Choosing the imputation mode:
         if isRegressive:
-            raise NotImplementedError, "Regressive is not implemented yet"
+            raise NotImplementedError("Regressive is not implemented yet")
         else:
             hmm0 = copy.deepcopy(self)
             hmm0.train_baumwelch(seqs, rtol, max_iter, avails)
+            # TODO: check correcteness
             states_decoded = hmm0.decode_viterbi(seqs, avails)
+            # TODO: check correcteness
             seqs_imputed = hmm0.impute_by_states(seqs, avails, states_decoded)
             p, it = self.train_baumwelch(seqs_imputed, rtol, max_iter)
         return p, it
         
-    def train_bauwelch_impute_mean(self, seqs, rtol, max_iter, avails, params=None):
+    def train_bauwelch_impute_mean(self, seqs, rtol, max_iter, avails, params=[10]):
         """ Train HMM with Baum-Welch by restoring gaps using mean imputation
         
         Parameters
@@ -619,7 +652,7 @@ class GHMM:
             arrays that indicate whether each element of each sequence is 
             not missing, i.e. True - not missing, False - is missing
         params : list of one item
-            number of neighbours
+            number of neighbours (default: 10)
             
         Returns
         -------
@@ -628,10 +661,7 @@ class GHMM:
         it : int
             iteration reached during baum-welch training process
         """
-        if params is not None:
-            n_neighbours = params[0]
-        else:
-            n_neighbours=10
+        n_neighbours = params[0]
         seqs_imp, avails_imp = imp.impute_by_n_neighbours(seqs, avails, n_neighbours,
                                               is_middle=True, method="mean")
         # in case some gaps were not imputed
@@ -719,8 +749,8 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, algorithm='marginalizati
     if hmms0 is None:
         mu_est, sig_est = estimate_mu_sig(seqs, N, M, Z, avails)
         if verbose:
-            print "mu_est: {}".format(mu_est)
-            print "sig_est: {}".format(sig_est)
+            print ("mu_est: {}".format(mu_est))
+            print ("sig_est: {}".format(sig_est))
         hmms = [GHMM(N,M,Z,mu_est,sig_est,seed=np.random.randint(10000))
                     for i in range(hmms0_size-1)]       
         # standard pi, a, tau parameters
@@ -750,14 +780,10 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, algorithm='marginalizati
             iter_best = iteration
             n_of_best = n_of_approx
         if verbose:
-            print "Baum: n of approximation = " + str(n_of_approx)
-            print "p=" + str(p)
-            print "iteration = " + str(iteration)
-            print hmm._pi
-            print hmm._a
-            print hmm._tau
-            print hmm._mu
-            print hmm._sig
+            print ("Baum: n of approximation = {}".format(n_of_approx))
+            print ("p={}".format(p))
+            print ("iteration = ".format(iteration))
+            print (str(hmm))
             print
         n_of_approx += 1
     return hmm_best, p_max, iter_best, n_of_best
@@ -939,9 +965,12 @@ def _my_multivariate_normal_pdf(x, mu, cov, cov_is_diagonal=False):
             det = np.prod(diag)
             diag = 1.0 / diag
             cov_inv = np.diag(diag)
-        else:
-            det = np.linalg.det(cov)
-            cov_inv = np.linalg.inv(cov)
+        else: # general case
+            try:                
+                cov_inv = np.linalg.inv(cov)
+                det = np.linalg.det(cov)
+            except np.linalg.LinAlgError:
+                return 0.0
         diff = x - mu        
         part1 = 1.0 / (np.sqrt((2.0*np.pi)**k * det))
         part2 = -0.5 * np.dot(np.dot(diff, cov_inv), diff)
@@ -952,7 +981,8 @@ def _is_singular(x):
     Is faster than linalg.cond(x) < 1.0 / sys.float_info.epsilon
     """
     try:
-        np.linalg.inv(x)
+        #np.linalg.inv(x)
+        sp.stats.multivariate_normal.pdf(x[0], x[0], x)
     except np.linalg.LinAlgError:
         return True
     return False
