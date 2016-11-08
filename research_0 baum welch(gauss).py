@@ -134,6 +134,7 @@ for n_of_launch in range(n_of_launches):
     print
     seqs_full, state_seqs = hmm.generate_sequences(K, T_max, seed=n_of_launch)
 
+    # calc for each t!
     p_true = hmm.calc_likelihood(seqs_full)
     sum_p_true += p_true
     

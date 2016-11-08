@@ -11,13 +11,15 @@ import GaussianHMM as ghmm
 import StandardImputationMethods as stdimp
 
 # experiment parameters
-n_of_launches = 5
+ghmm.is_cov_diagonal = False
+# lcoal parameters
+n_of_launches = 10
 T = 100
 K_train = 100
 K_class = 100
 rtol = 1e-5
 max_iter = 100
-hmms0_size = 1
+hmms0_size = 5
 sig_val = 0.1
 dA = 0.2
 use_predefined_hmms0 = False
@@ -25,12 +27,14 @@ is_gaps_places_different = True
 is_verbose = False
 is_using_true_hmm_for_hmms0 = False
 
-filename = "ultimate"+"_dA"+str(dA)+"_t"+str(T)+"_k"+str(K_train)+"_initrand"+\
-    str(hmms0_size*np.logical_not(use_predefined_hmms0))\
-    +"_rtol"+str(rtol)+"_iter"+str(max_iter)+"_x"+str(n_of_launches)
+#filename = "ultimate_diagcov_"+"_dA"+str(dA)+"_t"+str(T)+"_k"+str(K_train)+"_initrand"+\
+#   str(hmms0_size*np.logical_not(use_predefined_hmms0))\
+#    +"_rtol"+str(rtol)+"_iter"+str(max_iter)+"_x"+str(n_of_launches)
+    
 #gaps_range = range(0,T,T/10)
 #gaps_range = range(0,100,25) + range(100,600,50) + [575] + [590]
 gaps_range = range(0,100,10)
+#gaps_range = [10]
 
 # hmm 1
 
@@ -126,9 +130,12 @@ def evaluate_training(ps, pi_norms, a_norms, tau_norms, mu_norms, sig_norms,
         mu_norms[step] += 2.0
         sig_norms[step] += 2.0
         class_percent[step] += 50.0
-        with open("log.txt", "a") as f:
-            f.write("n_of_launch={}, n_of_gaps={}: hmm_trained1 is None = {}, hm_trained2 is None = {}\n",
-                    n_of_launch, n_of_gaps, hmm_trained1 is None, hmm_trained2 is None)
+        global filename
+        with open(filename+"_log.txt", "a") as f:
+            f.write("Bad training: n_of_launch={}, n_of_gaps={}: hmm_trained1 is None = {},"
+                    "hm_trained2 is None = {}, algorithm = {}\n"\
+                    .format(n_of_launch, n_of_gaps, hmm_trained1 is None, 
+                            hmm_trained2 is None, algorithm))
     else:
         # diff between 1st trained model and 1st true model
         diff_pi1 = np.linalg.norm(hmm_trained1._pi-hmm1._pi)           
@@ -180,6 +187,19 @@ def evaluate_training(ps, pi_norms, a_norms, tau_norms, mu_norms, sig_norms,
 #
 # research
 #
+
+if ghmm.is_cov_diagonal:
+    postfix = "diagcov"
+else:
+    postfix = "mypdf"
+filename = "ultimate_{}_N={}_M={}_Z={}_Ktrain={}_T={}_hmms0_size={}_rtol={}_iter={}_launches={}_"\
+           "truehmm0={}_diagcov={}"\
+            .format(postfix, N, M, Z, K_train, T, hmms0_size, rtol, max_iter, n_of_launches, 
+                    is_using_true_hmm_for_hmms0, ghmm.is_cov_diagonal)
+    
+with open(filename+"_log.txt", "w") as f:
+    f.write(filename+"\n")
+
 start_time = time.time()
 if use_predefined_hmms0:
     hmms0 = []
@@ -402,7 +422,7 @@ line1=plt.plot(xs, ps_marg, '-', label=u"Маргинализация")
 line2=plt.plot(xs, ps_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
 line3=plt.plot(xs, ps_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
 line4=plt.plot(xs, ps_mean, '-.', dash_capstyle='round', lw=2.0, label=u"Среднее")
-line5=plt.plot(xs, ps_true, '-', label=u"Истинная СММ без пропусков")
+#line5=plt.plot(xs, ps_true, '-', label=u"Истинная СММ без пропусков")
 
 ax2 = plt.subplot(422)
 plt.ylabel(r"$||\Pi - \Pi^*||$")
@@ -459,10 +479,6 @@ plt.figlegend((line1[0], line2[0], line3[0], line4[0], line5[0]),
 #plt.tight_layout(pad=0.0,h_pad=0.01)
 plt.show()
 
-filename = "research0_gauss_N={}_M={}_Z={}_Ktrain={}_T={}_hmms0_size={}_rtol={}_iter={}_launches={}_"\
-           "truehmm0={}"\
-            .format(N, M, Z, K_train, T, hmms0_size, rtol, max_iter, n_of_launches, 
-                    is_using_true_hmm_for_hmms0)
 plt.savefig(filename+".png")
 
 to_file = np.asarray([xs,ps_true,ps_marg, ps_gluing, ps_viterbi, ps_mean,
