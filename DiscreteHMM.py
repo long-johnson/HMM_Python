@@ -40,7 +40,7 @@ class DHMM:
         else:
             self._a = np.empty(shape=(n, n))
             for i in range(n):
-                self._a[i, :] = _generate_discrete_distribution(n)          
+                self._a[i, :] = _generate_discrete_distribution(n)
         # emission matrix
         if b is not None:
             self._b = np.array(b)
@@ -50,7 +50,12 @@ class DHMM:
             self._b = np.empty(shape=(n, m))
             for i in range(n):
                 self._b[i, :] = _generate_discrete_distribution(m)
-    
+
+    def __str__(self):
+        return "pi\n{}\n".format(self._pi) + \
+               "a\n{}\n".format(self._a) + \
+               "b\n{}\n".format(self._b)
+
     def generate_sequences(self, K, T, seed=None):
         """
         Generate sequences of observations produced by this model
@@ -122,16 +127,18 @@ class DHMM:
         likelihood = np.sum(alpha[-1,:])
         return likelihood, alpha
     
-    def calc_likelihood_noscale(self, seqs, avails=None):
+    def calc_loglikelihood(self, seqs, avails=None):
         """ calculate average likelihood that all the sequences
         was produced by this model
         seqs -- list of sequences
         return -- average likelihood
         """
         if avails is None:
-            return np.sum([self._calc_forward_noscale(seq)[0] for seq in seqs])
+            return np.sum([np.log(self._calc_forward_noscale(seq)[0])
+                           for seq in seqs])
         else:
-            return np.sum([self._calc_forward_noscale(seqs[k], avails[k])[0] \
+            return np.sum([np.log(self._calc_forward_noscale(seqs[k],
+                                                             avails[k])[0])
                            for k in range(len(seqs))])
     
     #TODO: not optimized
@@ -288,9 +295,9 @@ class DHMM:
         """
         K = len(seqs)
         iteration = 0
-        p_prev = -100.0 # likelihood on previous iteration
-        p = 100.0       # likelihood on cur iteration
-        # TODO: if next likelihood is lower than previous - 
+        p_prev = -100.0  # likelihood on previous iteration
+        p = 100.0        # likelihood on cur iteration
+        # TODO: if next likelihood is lower than previous -
         # TODO: then take previous parameters ?
         while np.abs(p_prev-p)/p > rtol and iteration < max_iter:
             p_prev = p
@@ -308,28 +315,28 @@ class DHMM:
                 xi = self._calc_xi_noscale(seq, alpha, beta, p, avail)
                 gamma = self._calc_gamma_noscale(alpha, beta, p, xi)
                 # accumulating for maximization
-                pi_up += gamma[0,:]                
+                pi_up += gamma[0, :]
                 a_up += np.sum(xi, axis=0)
-                temp = np.sum(gamma[:-1,:], axis=0)
+                temp = np.sum(gamma[:-1, :], axis=0)
                 a_down += temp
                 if avails is None:
-                    # sum all gammas where observation is symbol m  
+                    # sum all gammas where observation is symbol m
                     for m in range(self._m):
-                        b_up[:,m] += np.sum(gamma[seq==m,:], axis=0)
-                    b_down += temp + gamma[-1,:]
+                        b_up[:, m] += np.sum(gamma[seq == m, :], axis=0)
+                    b_down += temp + gamma[-1, :]
                 else:
-                    # sum all gammas where observation is avail and is symbol m                  
+                    # sum all gammas where observation is avail and is symbol m
                     for m in range(self._m):
-                        condition = (seq==m) & (avail)
-                        b_up[:,m] += np.sum(gamma[condition,:], axis=0)
+                        condition = (seq == m) & (avail)
+                        b_up[:, m] += np.sum(gamma[condition, :], axis=0)
                     # sum all gammas where observation is availiable
-                    b_down += np.sum(gamma[avail,:], axis=0)
+                    b_down += np.sum(gamma[avail, :], axis=0)
             # re-estimation
             self._pi = pi_up / K
             self._a = (a_up.T / a_down).T
             self._b = (b_up.T / b_down).T
             iteration += 1
-        likelihood = self.calc_likelihood_noscale(seqs, avails)
+        likelihood = self.calc_loglikelihood(seqs, avails)
         return likelihood, iteration
         
     def train_baumwelch_gluing(self, seqs, rtol, max_iter, avails,
@@ -343,7 +350,7 @@ class DHMM:
             glued = seqs[k][avails[k]]  # fancy indexing
             seqs_glued.append(glued)
         if isScale:
-            raise NotImplementedError, "Scaled baum-welch is not impl. yet"
+            raise (NotImplementedError, "Scaled baum-welch is not impl. yet")
         else:
             likelihood, iteration = self.train_baumwelch_noscale(seqs_glued, rtol, max_iter)
         return likelihood, iteration
@@ -369,7 +376,7 @@ class DHMM:
                     multiseq.append(to_add)
         #print multiseq
         if isScale:
-            raise NotImplementedError, "Scaled baum-welch is not impl. yet"
+            raise (NotImplementedError, "Scaled baum-welch is not impl. yet")
         else:
             likelihood, iteration = \
                 self.train_baumwelch_noscale(multiseq, rtol, max_iter)
@@ -385,10 +392,10 @@ class DHMM:
         return -- likelihood, iteration
         """
         if isScale:
-            raise NotImplementedError, "Scaled baum-welch is not impl. yet"
+            raise (NotImplementedError, "Scaled baum-welch is not impl. yet")
         # Choosing the imputation mode:
         if isRegressive:
-            raise NotImplementedError, "Regressive is not implemented yet"
+            raise (NotImplementedError, "Regressive is not implemented yet")
         else:
             hmm0 = copy.deepcopy(self)
             self.train_baumwelch_noscale(seqs, rtol, max_iter, avails)
@@ -405,7 +412,7 @@ class DHMM:
         return -- likelihood, iteration
         """
         if isScale:
-            raise NotImplementedError, "Scaled baum-welch is not impl. yet"
+            raise (NotImplementedError, "Scaled baum-welch is not impl. yet")
         if params is not None:
             n_neighbours = params[0]
         else:
@@ -483,9 +490,10 @@ class DHMM:
         return seqs
             
 
-def choose_best_hmm_using_bauwelch(seqs, hmms0_size, n, m, algorithm='marginalization',
-                                   isScale=False, hmms0=None, rtol=1e-1, 
-                                   max_iter=None, avails = None, verbose=False):
+def train_best_hmm_baumwelch(seqs, hmms0_size, n, m,
+                             algorithm='marginalization', isScale=False,
+                             hmms0=None, rtol=1e-1, max_iter=None,
+                             avails=None, verbose=False):
     """ Train several hmms using baumwelch algorithm and choose the best one
     seqs -- list of training sequences
     hmms0_size -- number of initial approximations
@@ -509,42 +517,50 @@ def choose_best_hmm_using_bauwelch(seqs, hmms0_size, n, m, algorithm='marginaliz
         for seed in seeds:
             hmms0.append(DHMM(n, m, seed=seed))
     # calc and choose the best hmm estimate
-    p_max = np.finfo(np.float64).min # minimal value possible
+    p_max = np.finfo(np.float64).min  # minimal value possible
     hmm_best = None
     iter_max = -1
     for hmm0 in hmms0:
         # TODO: scaled baum
         if isScale:
-            raise NotImplementedError, "Scaled baum-welch is not impl. yet"
+            raise (NotImplementedError, "Scaled baum-welch is not impl. yet")
         else:
             if algorithm == 'marginalization':
-                p, iteration = hmm0.train_baumwelch_noscale(seqs, rtol, max_iter, avails)
+                p, iteration = hmm0.train_baumwelch_noscale(seqs, rtol,
+                                                            max_iter, avails)
             if algorithm == 'gluing':
-                p, iteration = hmm0.train_baumwelch_gluing(seqs, rtol, max_iter, avails)
+                p, iteration = hmm0.train_baumwelch_gluing(seqs, rtol,
+                                                           max_iter, avails)
             if algorithm == 'viterbi':
-                p, iteration = hmm0.train_bauwelch_impute(seqs, rtol, max_iter, avails)
+                p, iteration = hmm0.train_bauwelch_impute(seqs, rtol,
+                                                          max_iter, avails)
             if algorithm == 'mode':
-                p, iteration = hmm0.train_bauwelch_impute_mode(seqs, rtol, max_iter, avails)
+                p, iteration = hmm0.train_bauwelch_impute_mode(seqs, rtol,
+                                                               max_iter,
+                                                               avails)
         if (p_max < p and np.isfinite(p)):
             hmm_best = copy.deepcopy(hmm0)
             p_max = p
             iter_max = iteration
         if verbose:
-            print "another approximation: p=" + str(p)
-            print "iteration = " + str(iteration)
-            print hmm0._pi
-            print hmm0._a
-            print hmm0._b
-    #if hmm_best is None:
-    #    raise Exception("Models from all initial approximations were estimated incorrectly")
+            print("another approximation: p=" + str(p))
+            print("iteration = " + str(iteration))
+            print(hmm0._pi)
+            print(hmm0._a)
+            print(hmm0._b)
+    # if hmm_best is None:
+    # raise Exception("Models from all initial approximations"
+    #                "were estimated incorrectly")
     return hmm_best, iter_max
+
 
 def _generate_discrete_distribution(n):
     """ Generate n values > 0.0, whose sum equals 1.0
     """
     xs = np.array(stats.uniform.rvs(size=n))
     return xs / np.sum(xs)
-    
+
+
 def _get_sample_discrete_distr(distr):
     """ Get sample of random value that has discrete distrubution 'distr'
         random values are 0, 1, ...
@@ -556,6 +572,7 @@ def _get_sample_discrete_distr(distr):
         if val < cum:
             return i
     return distr.size-1
+
 
 def estimate_hmm_params_by_seq_and_states(N, M, seqs, state_seqs):
     """ to check that sequences agrees with hmm produced it
@@ -598,7 +615,7 @@ def _estimate_hmm_params_by_seq_and_states(N, M, seq, state_seq):
     
 def classify_seqs(seqs, hmms, avails=None, isScale=False):
     if isScale:
-        raise NotImplementedError, "Scaled classify_seqs is not impl. yet"
+        raise (NotImplementedError, "Scaled classify_seqs is not impl. yet")
     predictions = []
     for k in range(len(seqs)):
         seq = seqs[k]
@@ -607,9 +624,9 @@ def classify_seqs(seqs, hmms, avails=None, isScale=False):
         for s in range(len(hmms)):
             hmm = hmms[s]
             if avails is not None:
-                p = hmm.calc_likelihood_noscale([seq], [avails[k]])
+                p = hmm.calc_loglikelihood([seq], [avails[k]])
             else:
-                p = hmm.calc_likelihood_noscale([seq])
+                p = hmm.calc_loglikelihood([seq])
             if p > p_max:
                 p_max = p
                 s_max = s
