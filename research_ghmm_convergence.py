@@ -1,0 +1,256 @@
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals
+
+import numpy as np
+import copy
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import time
+import GaussianHMM as ghmm
+
+print ("Starting convergence experiment...")
+
+start_time = time.time()
+
+#
+# research params
+#
+n_of_launches = 1
+K = 100
+T = 100
+hmms0_size = 1
+max_iter = 10000
+is_using_true_hmm_for_hmms0 = False
+sig_val = 0.1
+rtol_range = np.array([1e-1**i for i in range(1,7)])
+is_gaps_places_different = True
+n_of_gaps = int(T * 0.1)
+#algorithm = 'marginalization'
+algorithm = 'viterbi'
+
+#
+# true HMM parameters
+#
+# multidimensional with mixtures
+#pi = np.array([0.3, 0.4, 0.3])
+#a = np.array([[0.1, 0.7, 0.2],
+#              [0.2, 0.2, 0.6],
+#              [0.8, 0.1, 0.1]])
+#tau = np.array([[0.3, 0.4, 0.3],
+#                [0.3, 0.4, 0.3],
+#                [0.3, 0.4, 0.3]])
+#mu = np.array([
+#              [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]],
+#              [[3.0, 3.0], [4.0, 4.0], [5.0, 5.0]],
+#              [[6.0, 6.0], [7.0, 7.0], [8.0, 8.0]],
+#              ])
+#Z = (mu[0,0]).size
+#N, M = tau.shape
+#sig = np.empty((N,M,Z,Z))
+#for n in range(N):
+#    for m in range(M):
+#        sig[n,m,:,:] = np.eye(Z) * sig_val
+#hmm = ghmm.GHMM(N, M, Z, mu, sig, pi=pi, a=a, tau=tau)
+
+dA = 0.2
+pi = np.array([0.3, 0.4, 0.3])
+a = np.array([[0.1+dA, 0.7-dA, 0.2],
+              [0.2, 0.2+dA, 0.6-dA],
+              [0.8-dA, 0.1, 0.1+dA]])
+tau = np.array([[0.3, 0.4, 0.3],
+                [0.3, 0.4, 0.3],
+                [0.3, 0.4, 0.3]])
+mu = np.array([
+              [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]],
+              [[3.0, 3.0], [4.0, 4.0], [5.0, 5.0]],
+              [[6.0, 6.0], [7.0, 7.0], [8.0, 8.0]],
+              ])
+Z = (mu[0,0]).size
+N, M = tau.shape
+sig = np.empty((N,M,Z,Z))
+for n in range(N):
+    for m in range(M):
+        sig[n,m,:,:] = np.eye(Z) * sig_val
+hmm = ghmm.GHMM(N, M, Z, mu, sig, pi=pi, a=a, tau=tau)
+
+# is_using_true_hmm_for_hmms0
+if is_using_true_hmm_for_hmms0:
+    hmm0 = copy.deepcopy(hmm)
+    hmms0 = [hmm0]
+else:
+    hmms0 = None
+    
+    
+# generate gaps positions
+def gen_gaps(seqs):
+    np.random.seed(1)
+    to_dissapears = []
+    if is_gaps_places_different:
+        # gaps are in different places in sequences
+        for k in range(K):
+            to_dissapear = np.arange(T)
+            np.random.shuffle(to_dissapear)
+            to_dissapears.append(to_dissapear)
+    else:
+         # gaps are at the same place in sequences
+        to_dissapear = np.arange(T)
+        np.random.shuffle(to_dissapear)
+        for k in range(K):
+            to_dissapears.append(to_dissapear)
+            
+    # mark some elements as availiable and others as missing
+    avails = [np.full(seqs[k].shape[0], True, dtype=np.bool) for k in range(K)]
+    for k in range(K):
+        avails[k][to_dissapears[k][:n_of_gaps]] = False
+        seqs[k][to_dissapears[k][:n_of_gaps]] = np.nan
+    return seqs, avails
+
+
+#
+# experiment
+#
+iters = np.zeros_like(rtol_range, dtype=np.int)
+ps = np.zeros_like(rtol_range)
+pi_norms = np.zeros_like(rtol_range)
+a_norms = np.zeros_like(rtol_range)
+tau_norms = np.zeros_like(rtol_range)
+mu_norms = np.zeros_like(rtol_range)
+sig_norms = np.zeros_like(rtol_range)
+sum_p_true = 0.0
+for n_of_launch in range(n_of_launches):
+    print ("n_of_launch = {}".format(n_of_launch))
+    print
+    seqs, state_seqs = hmm.generate_sequences(K, T, seed=n_of_launch)
+
+    p_true = hmm.calc_likelihood(seqs)
+    sum_p_true += p_true
+    
+    seqs_original = copy.deepcopy(seqs)
+    
+    seqs, avails = gen_gaps(seqs)
+    
+    step = 0
+    for rtol in rtol_range:
+        # train hmm
+        np.random.seed(n_of_launch)
+        hmm_trained, p_max, iter_best, n_of_best = \
+            ghmm.train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, hmms0=hmms0,
+                                          rtol=rtol, max_iter=max_iter, avails=avails,
+                                          algorithm=algorithm)
+        p = hmm_trained.calc_likelihood(seqs_original)
+        diff_pi = np.linalg.norm(hmm_trained._pi - hmm._pi)           
+        diff_a = np.linalg.norm(hmm_trained._a - hmm._a)
+        diff_tau = np.linalg.norm(hmm_trained._tau - hmm._tau)
+        diff_mu = np.linalg.norm(hmm_trained._mu - hmm._mu)
+        diff_sig = np.linalg.norm(hmm_trained._sig - hmm._sig)
+        ps[step] += p
+        pi_norms[step] += diff_pi
+        a_norms[step] += diff_a
+        tau_norms[step] += diff_tau
+        mu_norms[step] += diff_mu
+        sig_norms[step] += diff_sig
+        iters[step] += iter_best
+        print ("rtol = {}".format(rtol))
+        print ("p = {}".format(p))
+        print ("p_max = {}".format(p_max))
+        print ("p_true = {}".format(p_true))
+        print ("diff_pi = {}".format(diff_pi))
+        print ("diff_a = {}".format(diff_a))
+        print ("diff_tau = {}".format(diff_tau))
+        print ("diff_mu = {}".format(diff_mu))
+        print ("diff_sig = {}".format(diff_sig))
+        print (str(hmm_trained))
+        print ("iter_best = {}".format(iter_best))
+        print ("n_of_best = {}".format(n_of_best))
+        print (("--- %.1f minutes ---".format((time.time()-start_time) / 60)))
+        print
+        step += 1
+
+sum_p_true /= n_of_launches
+iters /= n_of_launches
+ps /= n_of_launches
+pi_norms /= n_of_launches
+a_norms /= n_of_launches
+tau_norms /= n_of_launches
+mu_norms /= n_of_launches
+sig_norms /= n_of_launches
+xs = np.arange(rtol_range.size)
+
+
+# draw plots
+# plot all this
+mpl.rcdefaults()
+font = {'family': 'Verdana',
+        'weight': 'normal'}
+mpl.rc('font',**font)
+mpl.rc('font', size=12)
+plt.figure(figsize=(1920/96, 1000/96), dpi=96)
+
+labels = ["{}, 1e-{}".format(iters[i], xs[i]+1) for i in range(len(rtol_range))]
+print (labels)
+
+suptitle = u"Исследование сходимости алгоритма Баума-Велша. "\
+           u"Число скрытых состояний N = {}, число смесей M = {}, "\
+           u"Размерность наблюдений Z = {}, \n"\
+           u"число обучающих последовательностей K = {}, "\
+           u"максимальная длина обучающих последовательностей Tmax = {}, \n"\
+           u"число начальных приближений = {}, "\
+           u"число запусков эксперимента n_of_launches = {} \n"\
+           u"в качестве начального приближения взята истинная модель = {}, "\
+           u"число пропусков={}, алгоритм={}" \
+           .format(N, M, Z, K, T, hmms0_size, n_of_launches,
+                   is_using_true_hmm_for_hmms0, n_of_gaps, algorithm)
+plt.suptitle(suptitle)
+xlabel = u"Число итераций"
+ax1 = plt.subplot(321)
+plt.ylabel(u"Логарифм правдоподобия")
+plt.xlabel(xlabel)
+plt.plot(xs, ps, '-', label=u'Обученная модель')
+plt.plot(xs, np.full(len(xs), sum_p_true), '--', label=u'Истинная модель')
+plt.xticks(xs, labels)
+plt.gca().xaxis.grid(True)
+plt.legend(loc='lower right')
+
+ax2 = plt.subplot(322)
+plt.ylabel(r"$||\Pi - \Pi^*||$")
+plt.xlabel(xlabel)
+plt.plot(xs, pi_norms, '-')
+plt.xticks(xs, labels)
+plt.gca().xaxis.grid(True)
+
+ax3 = plt.subplot(323, sharex=ax1)
+plt.ylabel(r"$||A - A^*||$")
+plt.xlabel(xlabel)
+plt.plot(xs, a_norms, '-')
+plt.xticks(xs, labels)
+plt.gca().xaxis.grid(True)
+
+ax4 = plt.subplot(324, sharex=ax2)
+plt.ylabel(r"$||\tau - \tau^*||$")
+plt.xlabel(xlabel)
+plt.plot(xs, tau_norms, '-')
+plt.xticks(xs, iters)
+plt.gca().xaxis.grid(True)
+
+ax5 = plt.subplot(325, sharex=ax1)
+plt.ylabel(r"$||\mu - \mu^*||$")
+plt.xlabel(xlabel)
+plt.plot(xs, mu_norms, '-')
+plt.xticks(xs, labels)
+plt.gca().xaxis.grid(True)
+
+ax6 = plt.subplot(326, sharex=ax2)
+plt.ylabel(r"$||\Sigma - \Sigma^*||$")
+plt.xlabel(xlabel)
+plt.plot(xs, sig_norms, '-')
+plt.xticks(xs, labels)
+plt.gca().xaxis.grid(True)
+
+#plt.tight_layout(pad=0.0,h_pad=0.01)
+plt.show()
+
+filename = "research_convergence_N={}_M={}_Z={}_K={}_T={}_hmms0_size={}_launches={}"\
+           "truehmm0={}_nofgaps={}_alg={}"\
+            .format(N, M, Z, K, T, hmms0_size, n_of_launches, 
+                    is_using_true_hmm_for_hmms0, n_of_gaps, algorithm)
+plt.savefig(filename+".png")

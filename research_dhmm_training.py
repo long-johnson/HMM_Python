@@ -7,6 +7,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import sys
 import time
+import os
 import DiscreteHMM as dhmm
 import StandardImputationMethods as stdimp
 import HMM
@@ -26,9 +27,11 @@ n_of_launches = 1
 use_predefined_hmms0 = False
 is_gaps_places_different = True
 is_verbose = False
-filename = "out/dhmm_ultimate_dA{}_T{}_K{}_initrand{}_rtol{}_iter{}_x{}"\
+out_dir = "out"
+filename = "dhmm_ultimate_dA{}_T{}_K{}_initrand{}_rtol{}_iter{}_x{}"\
            .format(dA, T, K, hmms0_size*np.logical_not(use_predefined_hmms0),
                    rtol, max_iter, n_of_launches)
+filename = os.path.join(os.path.dirname(__file__), out_dir, filename)
 
 # gaps_range = range(0,T,T/10)
 gaps_range = list(range(0, 100, 25))

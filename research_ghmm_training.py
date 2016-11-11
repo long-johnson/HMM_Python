@@ -251,7 +251,7 @@ for n_of_launch in range(n_of_launches):
     # generate new sequences to classify
     seqs_class1, _ = hmm1.generate_sequences(K_class, T, seed=n_of_launch)
     seqs_class2, _ = hmm2.generate_sequences(K_class, T, seed=n_of_launch)
-    # estimate the best likelihood (by true models)
+    # calc best likelihood by true model on complete sequences
     loglikelihood_true1 = hmm1.calc_likelihood(seqs_train1)
     loglikelihood_true2 = hmm2.calc_likelihood(seqs_train2)
     p_true += loglikelihood_true1
@@ -357,8 +357,8 @@ for n_of_launch in range(n_of_launches):
 
 # get the average value
 class_percent_best /= n_of_launches
-p_true /= n_of_launches
-ps_true = np.full(len(gaps_range), fill_value=p_true)
+
+ps_true = np.full(len(gaps_range), fill_value=(p_true / n_of_launches))
 
 ps_marg /= n_of_launches
 pi_norms_marg /= n_of_launches
