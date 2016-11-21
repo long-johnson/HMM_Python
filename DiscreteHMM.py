@@ -487,16 +487,19 @@ class DHMM:
             q[t] = psi[t+1, q[t+1]]
         return q
 
-    def impute_by_states(self, seqs_, avails, states):
+    def impute_by_states(self, seqs_, avails, states_list):
         """ Impute gaps according to the most probable hidden states path
+        To impute we are sampling with the given emission distribution
         """
         seqs = copy.deepcopy(seqs_)
         K = len(seqs)
         for k in range(K):
             seq = seqs[k]
+            states = states_list[k]
             avail = avails[k]
-            for t in np.where(avail==False)[0]:
-                seq[t] = np.argmax(self._b[states[k][t], :])
+            for t in np.where(avail == False)[0]:
+                seq[t] = _get_sample_discrete_distr(self._b[states[t]])
+                # seq[t] = np.argmax(self._b[states[k][t], :])
         return seqs
 
 
@@ -628,19 +631,40 @@ def _estimate_hmm_params_by_seq_and_states(N, M, seq, state_seq):
     return pi, a, b
 
 
-def classify_seqs(seqs, hmms, avails=None, isScale=False):
+def classify_seqs(seqs, hmms, avails=None, isScale=False,
+                  algorithm='marginalization', n_neighbours=10):
+    """ n_neighbours works only with 'mode' algorithm
+    """
+    assert algorithm in ['marginalization', 'gluing', 'viterbi', 'mode']
     if isScale:
         raise (NotImplementedError, "Scaled classify_seqs is not impl. yet")
+    if avails is None:
+        avails = [np.full_like(seqs[k], True) for k in range(len(seqs))]
     predictions = []
     for k in range(len(seqs)):
-        seq = seqs[k]
+        seq = copy.deepcopy(seqs[k])
+        avail = copy.deepcopy(avails[k])
         p_max = np.finfo(np.float64).min
         s_max = 0
         for s in range(len(hmms)):
             hmm = hmms[s]
-            if avails is not None:
-                p = hmm.calc_loglikelihood([seq], [avails[k]])
-            else:
+            if algorithm == 'marginalization':
+                p = hmm.calc_loglikelihood([seq], [avail])
+            if algorithm == 'viterbi':
+                states = hmm.decode_viterbi([seq], avails=[avail])[0]
+                seq = hmm.impute_by_states([seq], [avail], [states])[0]
+                p = hmm.calc_loglikelihood([seq])
+            if algorithm == 'gluing':
+                glued = seq[avail]  # fancy indexing
+                p = hmm.calc_loglikelihood([glued])
+            if algorithm == 'mode':
+                seqs_imp, avails_imp = \
+                    imp.impute_by_n_neighbours([seq], [avail], n_neighbours,
+                                               method='mode',
+                                               n_of_symbols=hmm._m)
+                seq = imp.impute_by_whole_seq(seqs_imp, avails_imp,
+                                              method='mode',
+                                              n_of_symbols=hmm._m)[0]
                 p = hmm.calc_loglikelihood([seq])
             if p > p_max:
                 p_max = p

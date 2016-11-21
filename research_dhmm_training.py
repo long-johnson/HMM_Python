@@ -1,41 +1,36 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
-from scipy import stats
-import copy
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-import sys
 import time
 import os
+import copy
 import DiscreteHMM as dhmm
-import StandardImputationMethods as stdimp
 import HMM
 
 start_time = time.time()
 
-dA = 0.1
-rtol = 1e-5
-max_iter = 1
+dA = 0.3
+rtol = 1e-3
+max_iter = 1000
 T = 100
-K = 1
-T_for_dist = 1
-K_for_dist = 1
-K_class = 1
-hmms0_size = 1
-n_of_launches = 1
+K = 100
+T_for_dist = 500
+K_for_dist = 100
+K_class = 100
+hmms0_size = 5
+n_of_launches = 10
 use_predefined_hmms0 = False
 is_gaps_places_different = True
 is_verbose = False
 out_dir = "out"
-filename = "dhmm_ultimate_dA{}_T{}_K{}_initrand{}_rtol{}_iter{}_x{}"\
+filename = out_dir + "/dhmm_ultimate_dA{}_T{}_K{}_initrand{}_rtol{}_iter{}_x{}"\
            .format(dA, T, K, hmms0_size*np.logical_not(use_predefined_hmms0),
                    rtol, max_iter, n_of_launches)
-filename = os.path.join(os.path.dirname(__file__), out_dir, filename)
+# filename = os.path.join(os.path.dirname(__file__), out_dir, filename)
 
-# gaps_range = range(0,T,T/10)
-gaps_range = list(range(0, 100, 25))
-# + list(range(100,600,50)) + [575] + [590]
+gaps_range = list(range(0, 100, 10))
 
 #
 # True HMMs
@@ -131,18 +126,18 @@ def evaluate_training(ps, dists, pi_norms, a_norms, b_norms, class_percent,
                                         T_for_dist, K_for_dist)
     print("n_of_gaps {}".format(n_of_gaps))
     print(algorithm)
-    print("model1")
-    print(str(hmm_trained1))
-    print("model2")
-    print(str(hmm_trained2))
+    # print("model1")
+    # print(str(hmm_trained1))
+    # print("model2")
+    # print(str(hmm_trained2))
     print("loglikelihood: {} / {}".format(loglikelihood1, loglikelihood2))
     # print ("loglikelihood true: {} / {}".format(loglikelihood_true1,
     #                                             loglikelihood_true2))
     print("norm of pi diff = {} / {}".format(diff_pi1, diff_pi2))
     print("norm of A diff = {} / {}".format(diff_a1, diff_a2))
     print("norm of B diff = {} / {}".format(diff_b1, diff_b2))
-    print("Iterations: {} / {}".format(iter1, iter2))
     print("distances: {} / {}".format(dist1, dist2))
+    print("Iterations: {} / {}".format(iter1, iter2))
 
     # update
     dists[step] += dist1
@@ -151,14 +146,14 @@ def evaluate_training(ps, dists, pi_norms, a_norms, b_norms, class_percent,
     a_norms[step] += diff_a1
     b_norms[step] += diff_b1
     class_percent[step] += percent
-    print("Correctly classified {} %".format(percent) + " %")
-    print("--- {} minutes ---".format((time.time()-start_time) / 60))
+    print("Correctly classified {} %".format(percent))
+    print("--- {:.1f} minutes ---".format((time.time()-start_time) / 60))
 
 
 def make_missing_values(seqs_train_orig, to_dissapears):
     avails = [np.full_like(seqs_train_orig[i], True, dtype=np.bool)
               for i in range(K)]
-    seqs_train = [np.array(seqs_train_orig[k]) for k in range(K)]
+    seqs_train = copy.deepcopy(seqs_train_orig)
     for k in range(K):
         avails[k][to_dissapears[k][:n_of_gaps]] = False
         seqs_train[k][to_dissapears[k][:n_of_gaps]] = -20000
@@ -254,6 +249,7 @@ for n_of_launch in range(n_of_launches):
     percent = 100.0*(class_res1.count(0) + class_res2.count(1)) / (2.0*K_class)
     class_percent_best += percent
     print("Best percent is {} %".format(percent))
+    print()
 
     # the experiment
     step = 0
@@ -371,59 +367,59 @@ suptitle = u"Исследование алгоритмов обучения СМ
            .format(N, M, K, T, hmms0_size, rtol, max_iter, n_of_launches)
 plt.suptitle(suptitle)
 
-ax1 = plt.subplot(321)
+ax1 = plt.subplot(311)
 plt.ylabel(u"Логарифм правдоподобия")
 plt.xlabel(u"Процент пропусков")
 
 line1 = plt.plot(xs, ps_marg, '-', label=u"Маргинализация")
 line2 = plt.plot(xs, ps_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
 line3 = plt.plot(xs, ps_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
-line4 = plt.plot(xs, ps_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Среднее")
+line4 = plt.plot(xs, ps_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Мода")
 # line5=plt.plot(xs, ps_true, '-', label=u"Истинная СММ без пропусков")
 
-ax2 = plt.subplot(322)
-plt.ylabel(r"$||\Pi - \Pi^*||$")
-plt.xlabel(u"Процент пропусков")
-line1=plt.plot(xs, pi_norms_marg, '-', label=u"Маргинализация")
-line2=plt.plot(xs, pi_norms_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
-line3=plt.plot(xs, pi_norms_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
-line4=plt.plot(xs, pi_norms_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Среднее")
+#ax2 = plt.subplot(322)
+#plt.ylabel(r"$||\Pi - \Pi^*||$")
+#plt.xlabel(u"Процент пропусков")
+#line1=plt.plot(xs, pi_norms_marg, '-', label=u"Маргинализация")
+#line2=plt.plot(xs, pi_norms_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
+#line3=plt.plot(xs, pi_norms_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
+#line4=plt.plot(xs, pi_norms_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Мода")
+#
+#ax3 = plt.subplot(323, sharex=ax1)
+#plt.ylabel(r"$||A - A^*||$")
+#plt.xlabel(u"Процент пропусков")
+#line1=plt.plot(xs, a_norms_marg, '-', label=u"Маргинализация")
+#line2=plt.plot(xs, a_norms_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
+#line3=plt.plot(xs, a_norms_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
+#line4=plt.plot(xs, a_norms_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Мода")
+#
+#ax4 = plt.subplot(324, sharex=ax1)
+#plt.ylabel(r"$||B - B^*||$")
+#plt.xlabel(u"Процент пропусков")
+#line1=plt.plot(xs, b_norms_marg, '-', label=u"Маргинализация")
+#line2=plt.plot(xs, b_norms_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
+#line3=plt.plot(xs, b_norms_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
+#line4=plt.plot(xs, b_norms_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Мода")
 
-ax3 = plt.subplot(323, sharex=ax1)
-plt.ylabel(r"$||A - A^*||$")
-plt.xlabel(u"Процент пропусков")
-line1=plt.plot(xs, a_norms_marg, '-', label=u"Маргинализация")
-line2=plt.plot(xs, a_norms_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
-line3=plt.plot(xs, a_norms_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
-line4=plt.plot(xs, a_norms_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Среднее")
-
-ax4 = plt.subplot(324, sharex=ax1)
-plt.ylabel(r"$||B - B^*||$")
-plt.xlabel(u"Процент пропусков")
-line1=plt.plot(xs, b_norms_marg, '-', label=u"Маргинализация")
-line2=plt.plot(xs, b_norms_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
-line3=plt.plot(xs, b_norms_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
-line4=plt.plot(xs, b_norms_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Среднее")
-
-ax5 = plt.subplot(325, sharex=ax1)
+ax5 = plt.subplot(312, sharex=ax1)
 plt.ylabel(u"Верно распознанные, %")
 plt.xlabel(u"Процент пропусков")
 line1=plt.plot(xs, class_percent_marg, '-', label=u"Маргинализация")
 line2=plt.plot(xs, class_percent_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
 line3=plt.plot(xs, class_percent_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
-line4=plt.plot(xs, class_percent_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Среднее")
+line4=plt.plot(xs, class_percent_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Мода")
 line5 = plt.plot(xs, class_percents_best, '-', dash_capstyle='round',  lw=2.0, label=u"Истинные модели")
 
-ax6 = plt.subplot(326, sharex=ax1)
+ax6 = plt.subplot(313, sharex=ax1)
 plt.ylabel(r"$D_s(\lambda, \lambda^*)$")
 plt.xlabel(u"Процент пропусков")
 line1=plt.plot(xs, dists_marg, '-', label=u"Маргинализация")
 line2=plt.plot(xs, dists_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
 line3=plt.plot(xs, dists_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
-line4=plt.plot(xs, dists_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Среднее")
+line4=plt.plot(xs, dists_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Мода")
 
 plt.figlegend((line1[0], line2[0], line3[0], line4[0], line5[0]), 
-              (u"Маргинализация",u"Склеивание",u"Витерби", u"Среднее", u"Истинные модели"),
+              (u"Маргинализация",u"Склеивание",u"Витерби", u"Мода", u"Истинные модели"),
               loc = 'center right')
 #plt.tight_layout(pad=0.0,h_pad=0.01)
 plt.show()
@@ -448,6 +444,14 @@ np.savetxt(filename+".csv", to_file.T, delimiter=';',
 
 print("--- {} minutes ---".format((time.time()-start_time) / 60))
 
-#xs,ps1,ps_glue1,ps_viterbi1, a_norms1,a_norms_glue1,a_norms_viterbi1,b_norms1,\
-#b_norms_glue1,b_norms_viterbi1, class_percent, class_percent_glue, class_percent_viterbi\
-# = np.loadtxt(filename+".csv", delimiter=';', unpack=True)
+
+xs, ps_true, ps_marg, ps_gluing, ps_viterbi, ps_mode,\
+    pi_norms_marg, pi_norms_gluing, pi_norms_viterbi, pi_norms_mode,\
+    a_norms_marg, a_norms_gluing, a_norms_viterbi, a_norms_mode,\
+    b_norms_marg, b_norms_gluing, b_norms_viterbi, b_norms_mode,\
+    dists_marg, dists_gluing, dists_viterbi, dists_mode,\
+    class_percent_marg, class_percent_gluing, class_percent_viterbi,\
+    class_percent_mode, class_percents_best = \
+    np.loadtxt(filename+".csv", delimiter=';', unpack=True)
+
+
