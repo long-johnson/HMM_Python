@@ -4,7 +4,6 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import time
-import os
 import copy
 import DiscreteHMM as dhmm
 import HMM
@@ -13,14 +12,14 @@ start_time = time.time()
 
 dA = 0.3
 rtol = 1e-3
-max_iter = 1000
+max_iter = 1001
 T = 100
 K = 100
 T_for_dist = 500
 K_for_dist = 100
 K_class = 100
 hmms0_size = 5
-n_of_launches = 10
+n_of_launches = 5
 use_predefined_hmms0 = False
 is_gaps_places_different = True
 is_verbose = False
@@ -28,7 +27,6 @@ out_dir = "out"
 filename = out_dir + "/dhmm_ultimate_dA{}_T{}_K{}_initrand{}_rtol{}_iter{}_x{}"\
            .format(dA, T, K, hmms0_size*np.logical_not(use_predefined_hmms0),
                    rtol, max_iter, n_of_launches)
-# filename = os.path.join(os.path.dirname(__file__), out_dir, filename)
 
 gaps_range = list(range(0, 100, 10))
 
@@ -70,10 +68,34 @@ b = np.array([[0.2, 0.2, 0.6],
 hmm0 = dhmm.DHMM(N, M, pi=pi, a=a, b=b)
 
 
+
+
+def evaluate_classification(step, hmm1, hmm2,
+                            seqs1, seqs2, avails1=None, avails2=None,
+                            algorithm='marginalization',  n_neighbours=10,
+                            verbose=False):
+    """ Code to evaluate hmm training performance on given sequences
+    n_neighbours works only with ‘mode’ algorithm
+    
+    Returns
+    -------
+    percent of correctly classified sequences
+    """
+    print("algorithm = {}".format(algorithm))
+    class_res1 = dhmm.classify_seqs(seqs1, [hmm1, hmm2], avails=avails1,
+                                    algorithm=algorithm)
+    class_res2 = dhmm.classify_seqs(seqs2, [hmm1, hmm2], avails=avails2,
+                                    algorithm=algorithm)
+    return 100.0 * (class_res1.count(0) + class_res2.count(1)) / (2.0 * K)
+
+    
 def evaluate_training(ps, dists, pi_norms, a_norms, b_norms, class_percent,
+                      class_gaps_percent,
                       step, seed, start_time,
                       hmm1, hmm2, seqs_train_orig1, seqs_train_orig2,
-                      train_seqs1, train_seqs2, hmms0_size, N, M,
+                      train_seqs1, train_seqs2,
+                      seqs_class_gaps1, seqs_class_gaps2, avails_gaps1, avails_gaps2,
+                      hmms0_size, N, M,
                       hmms0=None, algorithm='marginalization', rtol=None,
                       max_iter=100, avails1=None, avails2=None, verbose=False):
     """ Code to evaluate hmm training performance on given sequences
@@ -124,20 +146,13 @@ def evaluate_training(ps, dists, pi_norms, a_norms, b_norms, class_percent,
                                         T_for_dist, K_for_dist)
     dist2 = HMM.calc_symmetric_distance(hmm2, hmm_trained2,
                                         T_for_dist, K_for_dist)
-    print("n_of_gaps {}".format(n_of_gaps))
-    print(algorithm)
-    # print("model1")
-    # print(str(hmm_trained1))
-    # print("model2")
-    # print(str(hmm_trained2))
-    print("loglikelihood: {} / {}".format(loglikelihood1, loglikelihood2))
-    # print ("loglikelihood true: {} / {}".format(loglikelihood_true1,
-    #                                             loglikelihood_true2))
-    print("norm of pi diff = {} / {}".format(diff_pi1, diff_pi2))
-    print("norm of A diff = {} / {}".format(diff_a1, diff_a2))
-    print("norm of B diff = {} / {}".format(diff_b1, diff_b2))
-    print("distances: {} / {}".format(dist1, dist2))
-    print("Iterations: {} / {}".format(iter1, iter2))
+    # classification with gaps
+    class_gaps_percent_tmp = evaluate_classification(step, hmm_trained1, hmm_trained2,
+                                                     seqs_class_gaps1,
+                                                     seqs_class_gaps2,
+                                                     avails_gaps1, avails_gaps2,
+                                                     algorithm)
+    class_gaps_percent[step] += class_gaps_percent_tmp
 
     # update
     dists[step] += dist1
@@ -146,8 +161,34 @@ def evaluate_training(ps, dists, pi_norms, a_norms, b_norms, class_percent,
     a_norms[step] += diff_a1
     b_norms[step] += diff_b1
     class_percent[step] += percent
+    print("n_of_gaps {}".format(n_of_gaps))
+    print(algorithm)
+    print("loglikelihood: {} / {}".format(loglikelihood1, loglikelihood2))
+    print("norm of pi diff = {} / {}".format(diff_pi1, diff_pi2))
+    print("norm of A diff = {} / {}".format(diff_a1, diff_a2))
+    print("norm of B diff = {} / {}".format(diff_b1, diff_b2))
+    print("distances: {} / {}".format(dist1, dist2))
+    print("Iterations: {} / {}".format(iter1, iter2))
     print("Correctly classified {} %".format(percent))
+    print("class_gaps_percent = {} %".format(class_gaps_percent_tmp))
     print("--- {:.1f} minutes ---".format((time.time()-start_time) / 60))
+
+
+def gen_gaps_positions(K, T, is_gaps_places_different):
+    to_dissapears = []
+    if is_gaps_places_different:
+        # gaps are in different places in sequences
+        for k in range(K):
+            to_dissapear = np.arange(T)
+            np.random.shuffle(to_dissapear)
+            to_dissapears.append(to_dissapear)
+    else:
+        # gaps are at the same place in sequences
+        to_dissapear = np.arange(T)
+        np.random.shuffle(to_dissapear)
+        for k in range(K):
+            to_dissapears.append(to_dissapear)
+    return to_dissapears
 
 
 def make_missing_values(seqs_train_orig, to_dissapears):
@@ -181,6 +222,7 @@ a_norms_marg = np.zeros_like(ps_marg)
 b_norms_marg = np.zeros_like(ps_marg)
 class_percent_marg = np.zeros_like(ps_marg)
 dists_marg = np.zeros_like(ps_marg)
+class_gaps_percent_marg = np.zeros_like(ps_marg)
 
 ps_viterbi = np.zeros_like(ps_marg)
 pi_norms_viterbi = np.zeros_like(ps_marg)
@@ -188,6 +230,7 @@ a_norms_viterbi = np.zeros_like(ps_marg)
 b_norms_viterbi = np.zeros_like(ps_marg)
 class_percent_viterbi = np.zeros_like(ps_marg)
 dists_viterbi = np.zeros_like(ps_marg)
+class_gaps_percent_viterbi = np.zeros_like(ps_marg)
 
 ps_gluing = np.zeros_like(ps_marg)
 pi_norms_gluing = np.zeros_like(ps_marg)
@@ -195,6 +238,7 @@ a_norms_gluing = np.zeros_like(ps_marg)
 b_norms_gluing = np.zeros_like(ps_marg)
 class_percent_gluing = np.zeros_like(ps_marg)
 dists_gluing = np.zeros_like(ps_marg)
+class_gaps_percent_gluing = np.zeros_like(ps_marg)
 
 ps_mode = np.zeros_like(ps_marg)
 pi_norms_mode = np.zeros_like(ps_marg)
@@ -202,7 +246,9 @@ a_norms_mode = np.zeros_like(ps_marg)
 b_norms_mode = np.zeros_like(ps_marg)
 class_percent_mode = np.zeros_like(ps_marg)
 dists_mode = np.zeros_like(ps_marg)
-
+class_gaps_percent_mode = np.zeros_like(ps_marg)
+    
+    
 #
 # Research
 #
@@ -210,29 +256,14 @@ for n_of_launch in range(n_of_launches):
     # generate new sequence
     seqs_train_orig1, _ = hmm1.generate_sequences(K, T, seed=n_of_launch)
     seqs_train_orig2, _ = hmm2.generate_sequences(K, T, seed=n_of_launch)
-    # prepare indices in sequence array to dissapear
-    to_dissapears1 = []
-    to_dissapears2 = []
-    np.random.seed(n_of_launch)
-
+    
     # generate gaps postitons
-    if is_gaps_places_different:
-        # gaps are in different places in sequences
-        for k in range(K):
-            to_dissapear = np.arange(T)
-            np.random.shuffle(to_dissapear)
-            to_dissapears1.append(to_dissapear)
-            np.random.shuffle(to_dissapear)
-            to_dissapears2.append(to_dissapear)
-    else:
-        # gaps are at the same place in sequences
-        to_dissapear1 = np.arange(T)
-        np.random.shuffle(to_dissapear1)
-        to_dissapear2 = np.arange(T)
-        np.random.shuffle(to_dissapear2)
-        for k in range(K):
-            to_dissapears1.append(to_dissapear1)
-            to_dissapears2.append(to_dissapear2)
+    np.random.seed(n_of_launch)
+    to_dissapears1 = gen_gaps_positions(K, T, is_gaps_places_different)
+    to_dissapears2 = gen_gaps_positions(K, T, is_gaps_places_different)
+    to_dissapears_class1 = gen_gaps_positions(K_class, T, is_gaps_places_different)
+    to_dissapears_class2 = gen_gaps_positions(K_class, T, is_gaps_places_different)
+    
 
     # generate sequences to classify
     seqs_class1, _ = hmm1.generate_sequences(K_class, T, seed=n_of_launch)
@@ -254,21 +285,31 @@ for n_of_launch in range(n_of_launches):
     # the experiment
     step = 0
     for n_of_gaps in gaps_range:
-        # mark some elements as missing
+        # mark some elements of training seqs as missing
         # hmm 1
         seqs_train1, avails1 = make_missing_values(seqs_train_orig1,
                                                    to_dissapears1)
         # hmm 2
         seqs_train2, avails2 = make_missing_values(seqs_train_orig2,
                                                    to_dissapears2)
+        # mark some elements of seqs to be classified as missing
+        # hmm 1
+        seqs_class_gaps1, avails_gaps1 = make_missing_values(seqs_class1,
+                                                             to_dissapears1)
+        # hmm 2
+        seqs_class_gaps2, avails_gaps2 = make_missing_values(seqs_class2,
+                                                             to_dissapears2)
         #
         # marginalization
         #
         evaluate_training(ps_marg, dists_marg, pi_norms_marg, a_norms_marg,
-                          b_norms_marg, class_percent_marg,
+                          b_norms_marg, class_percent_marg, class_gaps_percent_marg,
                           step, n_of_launch, start_time,
                           hmm1, hmm2, seqs_train_orig1, seqs_train_orig2,
-                          seqs_train1, seqs_train2, hmms0_size, N, M,
+                          seqs_train1, seqs_train2,
+                          seqs_class_gaps1, seqs_class_gaps2,
+                          avails_gaps1, avails_gaps2,
+                          hmms0_size, N, M,
                           hmms0, algorithm='marginalization', rtol=rtol,
                           max_iter=max_iter, avails1=avails1, avails2=avails2,
                           verbose=is_verbose)
@@ -277,10 +318,13 @@ for n_of_launch in range(n_of_launches):
         #
         evaluate_training(ps_viterbi, dists_viterbi, pi_norms_viterbi,
                           a_norms_viterbi, b_norms_viterbi,
-                          class_percent_viterbi,
+                          class_percent_viterbi, class_gaps_percent_viterbi,
                           step, n_of_launch, start_time,
                           hmm1, hmm2, seqs_train_orig1, seqs_train_orig2,
-                          seqs_train1, seqs_train2, hmms0_size, N, M,
+                          seqs_train1, seqs_train2,
+                          seqs_class_gaps1, seqs_class_gaps2,
+                          avails_gaps1, avails_gaps2,
+                          hmms0_size, N, M,
                           hmms0, algorithm='viterbi', rtol=rtol,
                           max_iter=max_iter, avails1=avails1, avails2=avails2,
                           verbose=is_verbose)
@@ -289,10 +333,13 @@ for n_of_launch in range(n_of_launches):
         #
         evaluate_training(ps_gluing, dists_gluing, pi_norms_gluing,
                           a_norms_gluing, b_norms_gluing,
-                          class_percent_gluing,
+                          class_percent_gluing, class_gaps_percent_gluing,
                           step, n_of_launch, start_time,
                           hmm1, hmm2, seqs_train_orig1, seqs_train_orig2,
-                          seqs_train1, seqs_train2, hmms0_size, N, M,
+                          seqs_train1, seqs_train2,
+                          seqs_class_gaps1, seqs_class_gaps2,
+                          avails_gaps1, avails_gaps2,
+                          hmms0_size, N, M,
                           hmms0, algorithm='gluing', rtol=rtol,
                           max_iter=max_iter, avails1=avails1, avails2=avails2,
                           verbose=is_verbose)
@@ -301,10 +348,13 @@ for n_of_launch in range(n_of_launches):
         #
         evaluate_training(ps_mode, dists_mode, pi_norms_mode,
                           a_norms_mode, b_norms_mode,
-                          class_percent_mode,
+                          class_percent_mode, class_gaps_percent_mode,
                           step, n_of_launch, start_time,
                           hmm1, hmm2, seqs_train_orig1, seqs_train_orig2,
-                          seqs_train1, seqs_train2, hmms0_size, N, M,
+                          seqs_train1, seqs_train2,
+                          seqs_class_gaps1, seqs_class_gaps2,
+                          avails_gaps1, avails_gaps2,
+                          hmms0_size, N, M,
                           hmms0, algorithm='mode', rtol=rtol,
                           max_iter=max_iter, avails1=avails1, avails2=avails2,
                           verbose=is_verbose)
@@ -323,6 +373,7 @@ a_norms_marg /= n_of_launches
 b_norms_marg /= n_of_launches
 class_percent_marg /= n_of_launches
 dists_marg /= n_of_launches
+class_gaps_percent_marg /= n_of_launches
 
 ps_viterbi /= n_of_launches
 pi_norms_viterbi /= n_of_launches
@@ -330,6 +381,7 @@ a_norms_viterbi /= n_of_launches
 b_norms_viterbi /= n_of_launches
 class_percent_viterbi /= n_of_launches
 dists_viterbi /= n_of_launches
+class_gaps_percent_viterbi /= n_of_launches
 
 ps_gluing /= n_of_launches
 pi_norms_gluing /= n_of_launches
@@ -337,6 +389,7 @@ a_norms_gluing /= n_of_launches
 b_norms_gluing /= n_of_launches
 class_percent_gluing /= n_of_launches
 dists_gluing /= n_of_launches
+class_gaps_percent_gluing /= n_of_launches
 
 ps_mode /= n_of_launches
 pi_norms_mode /= n_of_launches
@@ -344,7 +397,7 @@ a_norms_mode /= n_of_launches
 b_norms_mode /= n_of_launches
 class_percent_mode /= n_of_launches
 dists_mode /= n_of_launches
-
+class_gaps_percent_mode /= n_of_launches
 
 #
 # plot everything
@@ -367,7 +420,7 @@ suptitle = u"Исследование алгоритмов обучения СМ
            .format(N, M, K, T, hmms0_size, rtol, max_iter, n_of_launches)
 plt.suptitle(suptitle)
 
-ax1 = plt.subplot(311)
+ax1 = plt.subplot(221)
 plt.ylabel(u"Логарифм правдоподобия")
 plt.xlabel(u"Процент пропусков")
 
@@ -401,27 +454,38 @@ line4 = plt.plot(xs, ps_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Мо�
 #line3=plt.plot(xs, b_norms_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
 #line4=plt.plot(xs, b_norms_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Мода")
 
-ax5 = plt.subplot(312, sharex=ax1)
-plt.ylabel(u"Верно распознанные, %")
-plt.xlabel(u"Процент пропусков")
-line1=plt.plot(xs, class_percent_marg, '-', label=u"Маргинализация")
-line2=plt.plot(xs, class_percent_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
-line3=plt.plot(xs, class_percent_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
-line4=plt.plot(xs, class_percent_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Мода")
-line5 = plt.plot(xs, class_percents_best, '-', dash_capstyle='round',  lw=2.0, label=u"Истинные модели")
-
-ax6 = plt.subplot(313, sharex=ax1)
+ax5 = plt.subplot(222, sharex=ax1)
 plt.ylabel(r"$D_s(\lambda, \lambda^*)$")
 plt.xlabel(u"Процент пропусков")
-line1=plt.plot(xs, dists_marg, '-', label=u"Маргинализация")
-line2=plt.plot(xs, dists_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
-line3=plt.plot(xs, dists_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
-line4=plt.plot(xs, dists_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Мода")
+line1 = plt.plot(xs, dists_marg, '-', label=u"Маргинализация")
+line2 = plt.plot(xs, dists_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
+line3 = plt.plot(xs, dists_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
+line4 = plt.plot(xs, dists_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Мода")
+
+ax6 = plt.subplot(223, sharex=ax1)
+plt.ylabel(u"Верно распознанные, %")
+plt.xlabel(u"Процент пропусков")
+line1 = plt.plot(xs, class_percent_marg, '-', label=u"Маргинализация")
+line2 = plt.plot(xs, class_percent_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
+line3 = plt.plot(xs, class_percent_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
+line4 = plt.plot(xs, class_percent_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Мода")
+line5 = plt.plot(xs, class_percents_best, '-', dash_capstyle='round',  lw=2.0, label=u"Истинные модели")
+
+ax7 = plt.subplot(224, sharex=ax1)
+plt.ylabel(u"Верно распознанные, %")
+plt.xlabel(u"Процент пропусков")
+line1 = plt.plot(xs, class_gaps_percent_marg, '-', label=u"Маргинализация")
+line2 = plt.plot(xs, class_gaps_percent_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
+line3 = plt.plot(xs, class_gaps_percent_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
+line4 = plt.plot(xs, class_gaps_percent_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Мода")
+line5 = plt.plot(xs, class_percents_best, '-', dash_capstyle='round',  lw=2.0, label=u"Истинные модели")
+
+
 
 plt.figlegend((line1[0], line2[0], line3[0], line4[0], line5[0]), 
               (u"Маргинализация",u"Склеивание",u"Витерби", u"Мода", u"Истинные модели"),
               loc = 'center right')
-#plt.tight_layout(pad=0.0,h_pad=0.01)
+
 plt.show()
 
 plt.savefig(filename+".png")
@@ -432,7 +496,9 @@ to_file = np.asarray([xs, ps_true, ps_marg, ps_gluing, ps_viterbi, ps_mode,
                       b_norms_marg, b_norms_gluing, b_norms_viterbi, b_norms_mode,
                       dists_marg, dists_gluing, dists_viterbi, dists_mode,
                       class_percent_marg, class_percent_gluing, class_percent_viterbi, class_percent_mode,
+                      class_gaps_percent_marg, class_gaps_percent_gluing, class_gaps_percent_viterbi, class_gaps_percent_mode,
                       class_percents_best])
+
 np.savetxt(filename+".csv", to_file.T, delimiter=';',
            header="xs;ps_true;ps_marg;ps_gluing;ps_viterbi;ps_mode;"
                   "pi_norms_marg;pi_norms_gluing;pi_norms_viterbi;pi_norms_mode;"
@@ -440,18 +506,21 @@ np.savetxt(filename+".csv", to_file.T, delimiter=';',
                   "b_norms_marg;b_norms_gluing; b_norms_viterbi;b_norms_mode;"
                   "dists_marg;dists_gluing;dists_viterbi;dists_mode;"
                   "class_percent_marg; class_percent_gluing; class_percent_viterbi; class_percent_mode;"
+                  "class_gaps_percent_marg, class_gaps_percent_gluing, class_gaps_percent_viterbi, class_gaps_percent_mode,"
                   "class_percents_best")
 
 print("--- {} minutes ---".format((time.time()-start_time) / 60))
 
 
-xs, ps_true, ps_marg, ps_gluing, ps_viterbi, ps_mode,\
-    pi_norms_marg, pi_norms_gluing, pi_norms_viterbi, pi_norms_mode,\
-    a_norms_marg, a_norms_gluing, a_norms_viterbi, a_norms_mode,\
-    b_norms_marg, b_norms_gluing, b_norms_viterbi, b_norms_mode,\
-    dists_marg, dists_gluing, dists_viterbi, dists_mode,\
-    class_percent_marg, class_percent_gluing, class_percent_viterbi,\
-    class_percent_mode, class_percents_best = \
-    np.loadtxt(filename+".csv", delimiter=';', unpack=True)
+#xs, ps_true, ps_marg, ps_gluing, ps_viterbi, ps_mode,\
+#    pi_norms_marg, pi_norms_gluing, pi_norms_viterbi, pi_norms_mode,\
+#    a_norms_marg, a_norms_gluing, a_norms_viterbi, a_norms_mode,\
+#    b_norms_marg, b_norms_gluing, b_norms_viterbi, b_norms_mode,\
+#    dists_marg, dists_gluing, dists_viterbi, dists_mode,\
+#    class_percent_marg, class_percent_gluing, class_percent_viterbi,\
+#    class_percent_mode,
+#    class_gaps_percent_marg, class_gaps_percent_gluing, class_gaps_percent_viterbi, class_gaps_percent_mode,
+#    class_percents_best = \
+#    np.loadtxt(filename+".csv", delimiter=';', unpack=True)
 
 
