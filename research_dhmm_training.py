@@ -12,7 +12,7 @@ start_time = time.time()
 
 dA = 0.3
 rtol = 1e-3
-max_iter = 1001
+max_iter = 1000
 T = 100
 K = 100
 T_for_dist = 500
@@ -23,13 +23,11 @@ n_of_launches = 5
 use_predefined_hmms0 = False
 is_gaps_places_different = True
 is_verbose = False
-out_dir = "out"
-filename = out_dir + "/dhmm_ultimate_dA{}_T{}_K{}_initrand{}_rtol{}_iter{}_x{}"\
+gaps_range = list(range(0, 100, 10))
+out_dir = "out/"
+filename = out_dir + "dhmm_ultimate_dA{}_T{}_K{}_initrand{}_rtol{}_iter{}_x{}"\
            .format(dA, T, K, hmms0_size*np.logical_not(use_predefined_hmms0),
                    rtol, max_iter, n_of_launches)
-
-gaps_range = list(range(0, 100, 10))
-
 #
 # True HMMs
 #
@@ -66,8 +64,6 @@ b = np.array([[0.2, 0.2, 0.6],
               [0.2, 0.6, 0.2],
               [0.6, 0.2, 0.2]])
 hmm0 = dhmm.DHMM(N, M, pi=pi, a=a, b=b)
-
-
 
 
 def evaluate_classification(step, hmm1, hmm2,
@@ -115,6 +111,7 @@ def evaluate_training(ps, dists, pi_norms, a_norms, b_norms, class_percent,
     # if training error occured
     if hmm_trained1 is None or hmm_trained2 is None:
         ps[step] += ps[step-1] if step >= 1 else -10000.0
+        
         pi_norms[step] += 1.5
         a_norms[step] += 2.0
         b_norms[step] += 2.0
@@ -140,7 +137,7 @@ def evaluate_training(ps, dists, pi_norms, a_norms, b_norms, class_percent,
     # classification
     class_res1 = dhmm.classify_seqs(seqs_class1, [hmm_trained1, hmm_trained2])
     class_res2 = dhmm.classify_seqs(seqs_class2, [hmm_trained1, hmm_trained2])
-    percent = 100.0 * (class_res1.count(0)+class_res2.count(1)) / (2.0*K_class)
+    class_percent_tmp = 100.0 * (class_res1.count(0)+class_res2.count(1)) / (2.0*K_class)
     # loglikelihood distance
     dist1 = HMM.calc_symmetric_distance(hmm1, hmm_trained1,
                                         T_for_dist, K_for_dist)
@@ -152,15 +149,16 @@ def evaluate_training(ps, dists, pi_norms, a_norms, b_norms, class_percent,
                                                      seqs_class_gaps2,
                                                      avails_gaps1, avails_gaps2,
                                                      algorithm)
-    class_gaps_percent[step] += class_gaps_percent_tmp
-
     # update
     dists[step] += dist1
     ps[step] += loglikelihood1
     pi_norms[step] += diff_pi1
     a_norms[step] += diff_a1
     b_norms[step] += diff_b1
-    class_percent[step] += percent
+    class_percent[step] += class_percent_tmp
+    class_gaps_percent[step] += class_gaps_percent_tmp
+
+    # print
     print("n_of_gaps {}".format(n_of_gaps))
     print(algorithm)
     print("loglikelihood: {} / {}".format(loglikelihood1, loglikelihood2))
@@ -169,7 +167,7 @@ def evaluate_training(ps, dists, pi_norms, a_norms, b_norms, class_percent,
     print("norm of B diff = {} / {}".format(diff_b1, diff_b2))
     print("distances: {} / {}".format(dist1, dist2))
     print("Iterations: {} / {}".format(iter1, iter2))
-    print("Correctly classified {} %".format(percent))
+    print("Correctly classified {} %".format(class_percent_tmp))
     print("class_gaps_percent = {} %".format(class_gaps_percent_tmp))
     print("--- {:.1f} minutes ---".format((time.time()-start_time) / 60))
 
@@ -200,9 +198,8 @@ def make_missing_values(seqs_train_orig, to_dissapears):
         seqs_train[k][to_dissapears[k][:n_of_gaps]] = -20000
     return seqs_train, avails
 
-
 #
-# init variables to store research results
+# set specific initial hmm or generate initial hmms randomly
 #
 if use_predefined_hmms0:
     hmms0 = [hmm0]
@@ -211,6 +208,9 @@ else:
     hmms0 = [dhmm.DHMM(N, M, seed=i) for i in range(hmms0_size-1)]
     hmms0.append(dhmm.DHMM(N, M))
 
+#
+# init variables to store research results
+#
 xs = np.array(gaps_range, dtype=np.int)
 
 class_percent_best = 0.0
@@ -247,13 +247,12 @@ b_norms_mode = np.zeros_like(ps_marg)
 class_percent_mode = np.zeros_like(ps_marg)
 dists_mode = np.zeros_like(ps_marg)
 class_gaps_percent_mode = np.zeros_like(ps_marg)
-    
-    
+
 #
 # Research
 #
 for n_of_launch in range(n_of_launches):
-    # generate new sequence
+    # generate new training sequences
     seqs_train_orig1, _ = hmm1.generate_sequences(K, T, seed=n_of_launch)
     seqs_train_orig2, _ = hmm2.generate_sequences(K, T, seed=n_of_launch)
     
@@ -263,11 +262,10 @@ for n_of_launch in range(n_of_launches):
     to_dissapears2 = gen_gaps_positions(K, T, is_gaps_places_different)
     to_dissapears_class1 = gen_gaps_positions(K_class, T, is_gaps_places_different)
     to_dissapears_class2 = gen_gaps_positions(K_class, T, is_gaps_places_different)
-    
 
     # generate sequences to classify
-    seqs_class1, _ = hmm1.generate_sequences(K_class, T, seed=n_of_launch)
-    seqs_class2, _ = hmm2.generate_sequences(K_class, T, seed=n_of_launch)
+    seqs_class1, _ = hmm1.generate_sequences(K_class, T, seed=n_of_launch+1)
+    seqs_class2, _ = hmm2.generate_sequences(K_class, T, seed=n_of_launch+1)
 
     # calc best likelihood by true model on complete sequences
     loglikelihood_true1 = hmm1.calc_loglikelihood(seqs_train_orig1)
@@ -285,7 +283,7 @@ for n_of_launch in range(n_of_launches):
     # the experiment
     step = 0
     for n_of_gaps in gaps_range:
-        # mark some elements of training seqs as missing
+        # mark some elements of seqs as missing
         # hmm 1
         seqs_train1, avails1 = make_missing_values(seqs_train_orig1,
                                                    to_dissapears1)
@@ -428,7 +426,7 @@ line1 = plt.plot(xs, ps_marg, '-', label=u"Маргинализация")
 line2 = plt.plot(xs, ps_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
 line3 = plt.plot(xs, ps_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
 line4 = plt.plot(xs, ps_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Мода")
-# line5=plt.plot(xs, ps_true, '-', label=u"Истинная СММ без пропусков")
+line5=plt.plot(xs, ps_true, '-', label=u"Истинная СММ без пропусков")
 
 #ax2 = plt.subplot(322)
 #plt.ylabel(r"$||\Pi - \Pi^*||$")
@@ -479,8 +477,6 @@ line2 = plt.plot(xs, class_gaps_percent_gluing, '--',  dash_capstyle='round',  l
 line3 = plt.plot(xs, class_gaps_percent_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
 line4 = plt.plot(xs, class_gaps_percent_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Мода")
 line5 = plt.plot(xs, class_percents_best, '-', dash_capstyle='round',  lw=2.0, label=u"Истинные модели")
-
-
 
 plt.figlegend((line1[0], line2[0], line3[0], line4[0], line5[0]), 
               (u"Маргинализация",u"Склеивание",u"Витерби", u"Мода", u"Истинные модели"),

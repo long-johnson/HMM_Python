@@ -645,9 +645,9 @@ def classify_seqs(seqs, hmms, avails=None, isScale=False,
         seq = copy.deepcopy(seqs[k])
         avail = copy.deepcopy(avails[k])
         p_max = np.finfo(np.float64).min
-        s_max = 0
-        for s in range(len(hmms)):
-            hmm = hmms[s]
+        label_max = 0
+        for label in range(len(hmms)):
+            hmm = hmms[label]
             if algorithm == 'marginalization':
                 p = hmm.calc_loglikelihood([seq], [avail])
             if algorithm == 'viterbi':
@@ -668,6 +668,6 @@ def classify_seqs(seqs, hmms, avails=None, isScale=False,
                 p = hmm.calc_loglikelihood([seq])
             if p > p_max:
                 p_max = p
-                s_max = s
-        predictions.append(s_max)
+                label_max = label
+        predictions.append(label_max)
     return predictions
