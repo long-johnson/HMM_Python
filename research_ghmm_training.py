@@ -23,8 +23,8 @@ K = 100
 T_for_dist = 500
 K_for_dist = 100
 K_class = 100
-hmms0_size = 1
-n_of_launches = 1
+hmms0_size = 2
+n_of_launches = 5
 use_predefined_hmms0 = False
 is_gaps_places_different = True
 is_verbose = False
@@ -205,7 +205,7 @@ def evaluate_training(ps, dists, pi_norms, a_norms, tau_norms, mu_norms, sig_nor
     tau_norms[step] += diff_tau1
     mu_norms[step] += diff_mu1
     sig_norms[step] += diff_sig1
-    class_percent[step] += percent
+    class_percent[step] += class_percent_tmp
     class_gaps_percent[step] += class_gaps_percent_tmp
 
     # print
@@ -477,7 +477,7 @@ font = {'family': 'Verdana',
         'weight': 'normal'}
 mpl.rc('font',**font)
 mpl.rc('font', size=12)
-plt.figure(figsize=(1920/96, 1000/96), dpi=96)
+#plt.figure(figsize=(1920/96, 1000/96), dpi=96)
 
 suptitle = u"Исследование алгоритмов обучения СММ по посл-тям с пропусками "\
            u"Число скрытых состояний N = {}, число смесей M = {}, "\
@@ -542,12 +542,15 @@ line5=plt.plot(xs, ps_true, '-', label=u"Истинная СММ без проп
 #line4=plt.plot(xs, sig_norms_mean, '-.', dash_capstyle='round', lw=2.0, label=u"Среднее")
 
 ax5 = plt.subplot(222, sharex=ax1)
+axes = plt.gca()
+#axes.set_xlim([xmin,xmax])
+axes.set_ylim([0,1])
 plt.ylabel(r"$D_s(\lambda, \lambda^*)$")
 plt.xlabel(u"Процент пропусков")
 line1 = plt.plot(xs, dists_marg, '-', label=u"Маргинализация")
 line2 = plt.plot(xs, dists_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
 line3 = plt.plot(xs, dists_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
-line4 = plt.plot(xs, dists_mean, '-.', dash_capstyle='round', lw=2.0, label=u"Мода")
+line4 = plt.plot(xs, dists_mean, '-.', dash_capstyle='round', lw=2.0, label=u"Среднее")
 
 ax6 = plt.subplot(223, sharex=ax1)
 plt.ylabel(u"Верно распознанные, %")
@@ -555,7 +558,7 @@ plt.xlabel(u"Процент пропусков")
 line1 = plt.plot(xs, class_percent_marg, '-', label=u"Маргинализация")
 line2 = plt.plot(xs, class_percent_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
 line3 = plt.plot(xs, class_percent_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
-line4 = plt.plot(xs, class_percent_mean, '-.', dash_capstyle='round', lw=2.0, label=u"Мода")
+line4 = plt.plot(xs, class_percent_mean, '-.', dash_capstyle='round', lw=2.0, label=u"Среднее")
 line5 = plt.plot(xs, class_percents_best, '-', dash_capstyle='round',  lw=2.0, label=u"Истинные модели")
 
 ax7 = plt.subplot(224, sharex=ax1)
@@ -564,12 +567,13 @@ plt.xlabel(u"Процент пропусков")
 line1 = plt.plot(xs, class_gaps_percent_marg, '-', label=u"Маргинализация")
 line2 = plt.plot(xs, class_gaps_percent_gluing, '--',  dash_capstyle='round',  lw=2.0, label=u"Склеивание")
 line3 = plt.plot(xs, class_gaps_percent_viterbi, ':', dash_capstyle='round', lw=2.0, label=u"Витерби")
-line4 = plt.plot(xs, class_gaps_percent_mean, '-.', dash_capstyle='round', lw=2.0, label=u"Мода")
+line4 = plt.plot(xs, class_gaps_percent_mean, '-.', dash_capstyle='round', lw=2.0, label=u"Среднее")
 line5 = plt.plot(xs, class_percents_best, '-', dash_capstyle='round',  lw=2.0, label=u"Истинные модели")
 
-plt.figlegend((line1[0], line2[0], line3[0], line4[0], line5[0]), 
-              (u"Маргинализация",u"Склеивание",u"Витерби", u"Среднее", u"Истинные модели"),
-              loc = 'center right')
+#plt.figlegend((line1[0], line2[0], line3[0], line4[0], line5[0]), 
+#              (u"Маргинализация",u"Склеивание",u"Витерби", u"Среднее", u"Истинные модели"),
+#               loc = 'center right', bbox_to_anchor=(1.05, 0.5))
+
 
 plt.show()
 
@@ -585,15 +589,15 @@ to_file = np.asarray([xs,ps_true,ps_marg, ps_gluing, ps_viterbi, ps_mean,
                       class_percent_marg, class_percent_gluing, class_percent_viterbi, class_percent_mean,
                       class_gaps_percent_marg, class_gaps_percent_gluing, class_gaps_percent_viterbi, class_gaps_percent_mean,
                       class_percents_best])
-np.savetxt(filename+".csv", to_file.T, delimiter=';', 
-           header="xs;ps_true;ps_marg;ps_gluing;ps_viterbi;ps_mean;"
-                  "pi_norms_marg;pi_norms_gluing;pi_norms_viterbi;pi_norms_mean;"
-                  "a_norms_marg;a_norms_gluing;a_norms_viterbi;a_norms_mean;"
-                  "tau_norms_marg;tau_norms_gluing;tau_norms_viterbi;tau_norms_mean;"
-                  "mu_norms_marg;mu_norms_gluing;mu_norms_viterbi;mu_norms_mean;"
-                  "sig_norms_marg;sig_norms_gluing;sig_norms_viterbi;sig_norms_mean;"
-                  "dists_marg;dists_gluing;dists_viterbi;dists_mode;"
-                  "class_percent_marg; class_percent_gluing; class_percent_viterbi; class_percent_mode;"
+np.savetxt(filename+".csv", to_file.T, delimiter=',', 
+           header="xs,ps_true,ps_marg,ps_gluing,ps_viterbi,ps_mean,"
+                  "pi_norms_marg,pi_norms_gluing,pi_norms_viterbi,pi_norms_mean,"
+                  "a_norms_marg,a_norms_gluing,a_norms_viterbi,a_norms_mean,"
+                  "tau_norms_marg,tau_norms_gluing,tau_norms_viterbi,tau_norms_mean,"
+                  "mu_norms_marg,mu_norms_gluing,mu_norms_viterbi,mu_norms_mean,"
+                  "sig_norms_marg,sig_norms_gluing,sig_norms_viterbi,sig_norms_mean,"
+                  "dists_marg,dists_gluing,dists_viterbi,dists_mode,"
+                  "class_percent_marg, class_percent_gluing, class_percent_viterbi, class_percent_mode,"
                   "class_gaps_percent_marg, class_gaps_percent_gluing, class_gaps_percent_viterbi, class_gaps_percent_mode,"
                   "class_percents_best")
 
