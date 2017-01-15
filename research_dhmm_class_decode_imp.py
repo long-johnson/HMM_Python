@@ -17,9 +17,8 @@ K = 100
 n_of_launches = 100
 is_gaps_places_different = True
 is_verbose = False
-out_dir = "out"
+out_dir = "out/"
 filename = "dhmm_dA{}_T{}_K{}_x{}".format(dA, T, K, n_of_launches)
-# filename = os.path.join(os.path.dirname(__file__), out_dir, filename)
 
 gaps_range = list(range(0, 100, 10))
 
@@ -169,31 +168,31 @@ for n_of_launch in range(n_of_launches):
         # hmm 2
         seqs2, avails2 = make_missing_values(seqs_orig2, to_dissapears2,
                                              n_of_gaps)
-#        #
-#        # classification using marginalization
-#        #
-#        evaluate_classification(class_percents_marg, step, hmm1, hmm2,
-#                                seqs1, seqs2, avails1=avails1, avails2=avails2,
-#                                algorithm='marginalization',
-#                                verbose=is_verbose)
-#        #
-#        # classification using viterbi
-#        #
-#        evaluate_classification(class_percents_viterbi, step, hmm1, hmm2,
-#                                seqs1, seqs2, avails1=avails1, avails2=avails2,
-#                                algorithm='viterbi', verbose=is_verbose)
-#        #
-#        # classification using gluing
-#        #
-#        evaluate_classification(class_percents_gluing, step, hmm1, hmm2,
-#                                seqs1, seqs2, avails1=avails1, avails2=avails2,
-#                                algorithm='gluing', verbose=is_verbose)
-#        #
-#        # classification using mode imputation
-#        #
-#        evaluate_classification(class_percents_mode, step, hmm1, hmm2,
-#                                seqs1, seqs2, avails1=avails1, avails2=avails2,
-#                                algorithm='mode', verbose=is_verbose)
+        #
+        # classification using marginalization
+        #
+        evaluate_classification(class_percents_marg, step, hmm1, hmm2,
+                                seqs1, seqs2, avails1=avails1, avails2=avails2,
+                                algorithm='marginalization',
+                                verbose=is_verbose)
+        #
+        # classification using viterbi
+        #
+        evaluate_classification(class_percents_viterbi, step, hmm1, hmm2,
+                                seqs1, seqs2, avails1=avails1, avails2=avails2,
+                                algorithm='viterbi', verbose=is_verbose)
+        #
+        # classification using gluing
+        #
+        evaluate_classification(class_percents_gluing, step, hmm1, hmm2,
+                                seqs1, seqs2, avails1=avails1, avails2=avails2,
+                                algorithm='gluing', verbose=is_verbose)
+        #
+        # classification using mode imputation
+        #
+        evaluate_classification(class_percents_mode, step, hmm1, hmm2,
+                                seqs1, seqs2, avails1=avails1, avails2=avails2,
+                                algorithm='mode', verbose=is_verbose)
         #
         # decoding and imputation using enhanced viterbi
         #
@@ -252,7 +251,7 @@ line3=plt.plot(xs, class_percents_viterbi, ':', dash_capstyle='round', lw=2.0, l
 line4=plt.plot(xs, class_percents_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Мода")
 plt.legend()
 plt.show()
-plt.savefig(out_dir + "/class_" + filename + ".png")
+plt.savefig(out_dir + "class_" + filename + ".png")
 
 plt.figure(2)
 suptitle = u"Исследование алгоритмов декодирования последовательностей с пропусками "\
@@ -268,7 +267,7 @@ plt.plot(xs, decoded_percents_viterbi, ':', dash_capstyle='round', lw=2.0, label
 plt.plot(xs, decoded_percents_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Мода")
 plt.legend()
 plt.show()
-plt.savefig(out_dir + "/decode_" + filename + ".png")
+plt.savefig(out_dir + "decode_" + filename + ".png")
 
 plt.figure(3)
 suptitle = u"Исследование алгоритмов восстановленных последовательностей с пропусками "\
@@ -284,7 +283,7 @@ plt.plot(xs, imputed_percents_viterbi, ':', dash_capstyle='round', lw=2.0, label
 plt.plot(xs, imputed_percents_mode, '-.', dash_capstyle='round', lw=2.0, label=u"Мода")
 plt.legend()
 plt.show()
-plt.savefig(out_dir + "/impute_" + filename + ".png")
+plt.savefig(out_dir + "impute_" + filename + ".png")
 
 
 to_file = np.asarray([xs, class_percents_marg, class_percents_gluing,
@@ -299,6 +298,6 @@ np.savetxt(out_dir + "/class_decode_impute_" + filename + ".csv", to_file.T, del
 
 print("--- {} minutes ---".format((time.time()-start_time) / 60))
 
-filename = "out/dhmm_classification_dA0.4_T100_K100_x100"
-xs, class_percents_marg, class_percents_gluing, class_percents_viterbi, class_percents_mode\
-    = np.loadtxt(filename+".csv", delimiter=';', unpack=True)
+#filename = "out/dhmm_classification_dA0.4_T100_K100_x100"
+#xs, class_percents_marg, class_percents_gluing, class_percents_viterbi, class_percents_mode\
+#    = np.loadtxt(filename+".csv", delimiter=';', unpack=True)

@@ -492,7 +492,7 @@ class GHMM:
                     # nullify outbound transitions
                     a[i,:] = 0.0
         
-    def decode_viterbi(self, seqs, avails):
+    def decode_viterbi(self, seqs, avails=None):
         """ Infer the sequence of hidden states that were reached during generation
             multiple sequences version
         
@@ -510,6 +510,8 @@ class GHMM:
             Inferred sequence of hidden states    
         """
         K = len(seqs)
+        if avails == None:
+            avails = [np.full(len(seqs[k]), True, dtype=np.bool) for k in range(K)]
         states_list = []
         for k in range(K): 
             states_list.append(self._decode_viterbi(seqs[k], avails[k]))

@@ -157,6 +157,7 @@ pi_norms = pi_norms / n_of_launches
 a_norms = a_norms / n_of_launches
 b_norms = b_norms / n_of_launches
 dists = dists / n_of_launches
+
 xs = np.arange(rtol_range.size)
 
 
