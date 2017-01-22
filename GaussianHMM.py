@@ -697,6 +697,45 @@ class GHMM:
             seqs_glued.append(glued)
         p, it = self.train_baumwelch(seqs_glued, rtol, max_iter)
         return p, it
+        
+    def calculate_derivatives(self, seq, avail=None):
+        """ Calculate derivatives of loglikelihood function for the given sequence
+        with respect to each HMM parameter
+        
+        Parameters
+        ----------
+        seq : float 2darray (TxZ)
+            given sequence
+        avail : boolean 1darray (T), optional
+            array that indicate the available observations in seq
+        Returns
+        -------
+        derivs : float 1darray (N + NxN + NxM + NxMxZ + NxMxZxZ)
+            derivatives of loglikelihood function for the given sequence
+            with respect to each HMM parameter
+        """
+        if avail is None:
+            avail = np.full_like(seq, True, dtype=np.bool)
+        b, g = self._calc_b(seq, avail)
+        return np.concatenate(self._calc_derivs_pi(seq, avail, b),
+                              self._calc_derivs_a(seq, avail),
+                              self._calc_derivs_tau(seq, avail),
+                              self._calc_derivs_mu(seq, avail),
+                              self._calc_derivs_sig(seq, avail))
+
+    def _calc_derivs_pi(self, seq, avail, b):
+        N = self._n
+        T = len(seq)
+        d_loglike_wrt_pi = np.empty(N)
+        for i in range(N):
+            d_alpha0_wrt_pi = np.zeros(N)
+            d_alpha0_wrt_pi[i] = b[0, i]
+            d_b_wrt_pi = np.zeros((N, T))
+            d_a_wrt_pi =  np.zeros((N, N))
+            d_loglike_wrt_pi[i] = \
+                self._calc_d_loglike_wrt_nu(b, d_alpha0_wrt_pi, d_b_wrt_pi,
+                                            d_a_wrt_pi)
+        return d_loglike_wrt_pi
 
 def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, algorithm='marginalization',
                              avails=None, hmms0=None, rtol=1e-1, max_iter=None, 
@@ -786,6 +825,7 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, algorithm='marginalizati
         n_of_approx += 1
     return hmm_best, p_max, iter_best, n_of_best
 
+
 def estimate_mu_sig(seqs, N, M, Z, avails=None):
     """ Estimate values of mu and sig basing on the sequences.
         mu elements are uniformly scattered from min to max seq element
@@ -831,6 +871,7 @@ def estimate_mu_sig(seqs, N, M, Z, avails=None):
         for j in range(M):
             sig[i,j] = np.eye(Z)
     return mu, sig
+
 
 def classify_seqs(seqs, hmms, avails=None, algorithm='marginalization',
                   n_neighbours=10):
@@ -887,6 +928,7 @@ def classify_seqs(seqs, hmms, avails=None, algorithm='marginalization',
                 label_max = label
         predictions.append(label_max)
     return predictions
+
     
 def estimate_hmm_params_by_seq_and_states(mu, sig, seqs, state_seqs):
     """ to check that sequences agrees with hmm produced it
