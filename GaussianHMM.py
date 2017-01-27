@@ -168,7 +168,7 @@ class GHMM:
         for k in range(len(seqs)):
             seq = seqs[k]
             avail = avails[k] if avails is not None \
-                              else np.full(seq.shape[0], True, dtype=np.bool)
+                              else np.full(len(seq), True, dtype=np.bool)
             b, _ = self._calc_b(seq, avail)
             likelihood += self._calc_forward_scaled(b)[0]
         return likelihood
@@ -698,7 +698,7 @@ class GHMM:
         p, it = self.train_baumwelch(seqs_glued, rtol, max_iter)
         return p, it
         
-    def calculate_derivatives(self, seqs, avails=None):
+    def calc_derivatives(self, seqs, avails=None):
         """ Calculate derivatives of loglikelihood function for the given sequence
         with respect to each HMM parameter
         
@@ -720,11 +720,11 @@ class GHMM:
         d_loglike_wrt_a = np.zeros_like(self._a)
         d_loglike_wrt_tau = np.zeros_like(self._tau)
         d_loglike_wrt_mu = np.zeros_like(self._mu)
-        d_loglike_wrt_sig = np.zeros_like(self._sig)
+        d_loglike_wrt_sig = np.zeros_like(self._mu) # TODO: non-diagonal
         for k in range(K):
             seq = seqs[k]
             avail = avails[k] if avails is not None else\
-                    np.full_like(seq, True, dtype=np.bool)
+                    np.full(len(seq), True, dtype=np.bool)
             b, g = self._calc_b(seq, avail)
             _, alpha, c = self._calc_forward_scaled(b)
             d_loglike_wrt_pi += self._calc_derivs_pi(seq, avail, b, c, alpha)
@@ -732,9 +732,9 @@ class GHMM:
             d_loglike_wrt_tau += self._calc_derivs_tau(seq, avail, b, c, alpha, g)
             d_loglike_wrt_mu += self._calc_derivs_mu(seq, avail, b, c, alpha, g)
             d_loglike_wrt_sig += self._calc_derivs_sig(seq, avail, b, c, alpha, g)
-        return np.concatenate(d_loglike_wrt_pi, d_loglike_wrt_a,
-                              d_loglike_wrt_tau, d_loglike_wrt_mu,
-                              d_loglike_wrt_sig)
+        return np.concatenate((d_loglike_wrt_pi, d_loglike_wrt_a.flatten(),
+                              d_loglike_wrt_tau.flatten(), d_loglike_wrt_mu.flatten(),
+                              d_loglike_wrt_sig.flatten()))
 
     def _calc_derivs_pi(self, seq, avail, b, c, alpha):
         N = self._n
@@ -860,7 +860,7 @@ class GHMM:
                                np.sum(alpha[t-1] * a_T, axis=1) * d_b_wrt_nu[t]
         d_c_wrt_nu[-1] = -(c[-1] ** 2) * np.sum(d_alphatilde_wrt_nu[-1])
         return -np.sum(d_c_wrt_nu / c)
-            
+
 
 def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, algorithm='marginalization',
                              avails=None, hmms0=None, rtol=1e-1, max_iter=None, 
