@@ -699,42 +699,43 @@ class GHMM:
         return p, it
         
     def calc_derivatives(self, seqs, avails=None):
-        """ Calculate derivatives of loglikelihood function for the given sequence
+        """ Calculate derivatives of loglikelihood function for the given sequences
         with respect to each HMM parameter
         
         Parameters
         ----------
-        seqs : list of float 2darrays (TxZ)
-            given sequence
-        avails : list of boolean 1darrays (T), optional
+        seqs : list (K) of float 2darrays (TxZ)
+            given sequences
+        avails : list (K) of boolean 1darrays (T), optional
             array that indicate the available observations in seq
         Returns
         -------
-        derivs : float 1darray (N + NxN + NxM + NxMxZ + NxMxZ)
-            derivatives of loglikelihood function for the given sequence
+        derivs : float 2darray K x (N + NxN + NxM + NxMxZ + NxMxZ)
+            derivatives of loglikelihood function for each of the given sequences
             with respect to each HMM parameter
         """
         # TODO: consider taking derivatives of non-diagonal covariations matrix
+        N, M, Z = self._mu.shape
         K = len(seqs)
-        d_loglike_wrt_pi = np.zeros_like(self._pi)
-        d_loglike_wrt_a = np.zeros_like(self._a)
-        d_loglike_wrt_tau = np.zeros_like(self._tau)
-        d_loglike_wrt_mu = np.zeros_like(self._mu)
-        d_loglike_wrt_sig = np.zeros_like(self._mu) # TODO: non-diagonal
+        n_of_derivs = N + N*N + N*M + N*M*Z + N*M*Z
+        derivatives = np.empty((K, n_of_derivs))
         for k in range(K):
             seq = seqs[k]
             avail = avails[k] if avails is not None else\
                     np.full(len(seq), True, dtype=np.bool)
             b, g = self._calc_b(seq, avail)
             _, alpha, c = self._calc_forward_scaled(b)
-            d_loglike_wrt_pi += self._calc_derivs_pi(seq, avail, b, c, alpha)
-            d_loglike_wrt_a += self._calc_derivs_a(seq, avail, b, c, alpha)
-            d_loglike_wrt_tau += self._calc_derivs_tau(seq, avail, b, c, alpha, g)
-            d_loglike_wrt_mu += self._calc_derivs_mu(seq, avail, b, c, alpha, g)
-            d_loglike_wrt_sig += self._calc_derivs_sig(seq, avail, b, c, alpha, g)
-        return np.concatenate((d_loglike_wrt_pi, d_loglike_wrt_a.flatten(),
-                              d_loglike_wrt_tau.flatten(), d_loglike_wrt_mu.flatten(),
-                              d_loglike_wrt_sig.flatten()))
+            d_loglike_wrt_pi = self._calc_derivs_pi(seq, avail, b, c, alpha)
+            d_loglike_wrt_a = self._calc_derivs_a(seq, avail, b, c, alpha)
+            d_loglike_wrt_tau = self._calc_derivs_tau(seq, avail, b, c, alpha, g)
+            d_loglike_wrt_mu = self._calc_derivs_mu(seq, avail, b, c, alpha, g)
+            d_loglike_wrt_sig = self._calc_derivs_sig(seq, avail, b, c, alpha, g)
+            derivatives[k] = np.concatenate((d_loglike_wrt_pi.flatten(),
+                                             d_loglike_wrt_a.flatten(),
+                                             d_loglike_wrt_tau.flatten(),
+                                             d_loglike_wrt_mu.flatten(),
+                                             d_loglike_wrt_sig.flatten()))
+        return derivatives
 
     def _calc_derivs_pi(self, seq, avail, b, c, alpha):
         N = self._n
