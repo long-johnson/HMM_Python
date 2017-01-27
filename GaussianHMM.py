@@ -3,9 +3,12 @@
 import numpy as np
 import scipy as sp
 import scipy.stats
+from sklearn import svm
+from sklearn import preprocessing
 import copy
 from itertools import product
 import StandardImputationMethods as imp
+
 
 # global parameter
 is_cov_diagonal = False
@@ -951,6 +954,78 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, algorithm='marginalizati
         n_of_approx += 1
     return hmm_best, p_max, iter_best, n_of_best
 
+def train_svm_classifier(hmms, seqs_list, avails_list=None):
+    """ Train svm classifier that classifies sequences based on their 
+    derivatives of likelihood function with respect to hmm params
+    
+    Parameters
+    ----------
+    seqs_list : list (len(hmms)) of lists (K) of float 2darrays (TxZ)
+        list of lists of sequences belonging to each class
+    avails_list :list (len(hmms)) of lists (K) of bool 1darrays (T)
+        _
+    hmms : list of hmms representing each of the competing classes
+        all hmms must have the same structure
+    len(hmms) == len(seqs_list) == len(avails_list)
+    
+    Returns
+    -------
+    clf : sklearn.svm.SVC
+        SVM classifier
+    scaler : scaler
+        scaler
+    """
+    assert(len(hmms) == len(seqs_list) and
+           (avails_list is None or len(seqs_list) == len(avails_list)))
+    n_of_classes = len(hmms)
+    # define training samples
+    X = []
+    for hmm in hmms:
+        # vertical block of sequence derivatives
+        Xvblock = []
+        # for each set of sequences
+        for s in range(n_of_classes):
+            seqs = seqs_list[s]
+            avails = avails_list[s] if avails_list is not None else None
+            Xvblock.append(hmm.calc_derivatives(seqs, avails))
+        X.append(np.concatenate(Xvblock, axis=0))
+    X = np.concatenate(X, axis=1)
+    # define labels
+    y = []
+    for s in range(n_of_classes):
+        y.append(np.full(len(seqs), fill_value=s, dtype=np.int))
+    y = np.concatenate(y, axis=0)
+    clf = svm.SVC()
+    scaler = preprocessing.StandardScaler().fit(X)
+    X = scaler.transform(X)
+    clf.fit(X, y)
+    return clf, scaler
+
+
+def classify_seqs_svm(seqs, hmms, clf, scaler, avails=None,
+                      algorithm='marginalization', n_neighbours=10):
+    """ Predict class label for each seq based on derivatives of likelihood
+    function for that seq using SVM classifier
+    
+    Parameters
+    ----------
+    seqs : list of 2darrays (TxZ)
+        sequences to be classified
+    hmms : list of GHMMs 
+        list of hmms each of which corresponds to a class
+    clf : sklearn.svm.SVC
+        SVM classifier
+        
+    Returns
+    -------
+    predictions : list of ints
+        list of class labels
+    """
+    X = [hmm.calc_derivatives(seqs, avails) for hmm in hmms]
+    X = np.concatenate(X, axis=1)
+    X = scaler.transform(X)
+    return clf.predict(X)
+    
 
 def estimate_mu_sig(seqs, N, M, Z, avails=None):
     """ Estimate values of mu and sig basing on the sequences.
@@ -1018,12 +1093,12 @@ def classify_seqs(seqs, hmms, avails=None, algorithm='marginalization',
         
     Returns
     -------
-    predictions : list of ints
-        list of class labels
+    predictions : int 1darray
+        array of class labels
     """
     assert algorithm in ['marginalization', 'gluing', 'viterbi', 'mean']
     if avails is None:
-        avails = [np.full(len(seqs[k]), True) for k in range(len(seqs))]
+        avails = [np.full(len(seqs[k]), True, dtype=np.bool) for k in range(len(seqs))]
 
     predictions = []
     for k in range(len(seqs)):
@@ -1053,7 +1128,7 @@ def classify_seqs(seqs, hmms, avails=None, algorithm='marginalization',
                 p_max = p
                 label_max = label
         predictions.append(label_max)
-    return predictions
+    return np.array(predictions, dtype=np.int)
 
     
 def estimate_hmm_params_by_seq_and_states(mu, sig, seqs, state_seqs):
