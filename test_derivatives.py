@@ -5,12 +5,13 @@ Testing derivatives calculations
 """
 
 import numpy as np
+from sklearn import svm
 import GaussianHMM as ghmm
 
 sig_val = 0.1
 T = 100
 K = 100
-dA = 0.2
+dA = 0.1
 
 # hmm1
 pi = np.array([0.3, 0.4, 0.3])
@@ -70,7 +71,11 @@ hmm2 = ghmm.GHMM(N, M, Z, mu, sig, pi=pi, a=a, tau=tau)
 print("training SVM")
 train_seqs1, _ = hmm1.generate_sequences(K, T, seed=1)
 train_seqs2, _ = hmm2.generate_sequences(K, T, seed=1)
-clf, scaler = ghmm.train_svm_classifier([hmm1, hmm2], [train_seqs1, train_seqs2])
+svm_params = svm.SVC(C=1.0, kernel='rbf', degree=3, gamma='auto', coef0=0.0,
+                     probability=False, shrinking=1, tol=1e-3, cache_size=500,
+                     verbose=True, )
+clf, scaler = ghmm.train_svm_classifier([hmm1, hmm2], [train_seqs1, train_seqs2],
+                                        svm_params)
 
 print("generating class seqs")
 class_seqs1, _ = hmm1.generate_sequences(K, T, seed=2)
