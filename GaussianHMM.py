@@ -954,7 +954,30 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, algorithm='marginalizati
         n_of_approx += 1
     return hmm_best, p_max, iter_best, n_of_best
 
-def train_svm_classifier(hmms, seqs_list, clf, avails_list=None):
+
+def _form_train_data_for_SVM(hmms, seqs_list, avails_list=None):
+    n_of_classes = len(hmms)
+    # define training samples
+    X = []
+    for hmm in hmms:
+        # vertical block of sequence derivatives
+        Xvblock = []
+        # for each set of sequences
+        for s in range(n_of_classes):
+            seqs = seqs_list[s]
+            avails = avails_list[s] if avails_list is not None else None
+            Xvblock.append(hmm.calc_derivatives(seqs, avails))
+        X.append(np.concatenate(Xvblock, axis=0))
+    X = np.concatenate(X, axis=1)
+    # define labels
+    y = []
+    for s in range(n_of_classes):
+        y.append(np.full(len(seqs_list[s]), fill_value=s, dtype=np.int))
+    y = np.concatenate(y, axis=0)
+    return X, y
+
+
+def train_svm_classifier(hmms, seqs_list, clf, avails_list=None, X=None, y=None):
     """ Train svm classifier that classifies sequences based on their 
     derivatives of likelihood function with respect to hmm params
     
@@ -980,33 +1003,23 @@ def train_svm_classifier(hmms, seqs_list, clf, avails_list=None):
     """
     assert(len(hmms) == len(seqs_list) and
            (avails_list is None or len(seqs_list) == len(avails_list)))
-    n_of_classes = len(hmms)
     # define training samples
-    X = []
-    for hmm in hmms:
-        # vertical block of sequence derivatives
-        Xvblock = []
-        # for each set of sequences
-        for s in range(n_of_classes):
-            seqs = seqs_list[s]
-            avails = avails_list[s] if avails_list is not None else None
-            Xvblock.append(hmm.calc_derivatives(seqs, avails))
-        X.append(np.concatenate(Xvblock, axis=0))
-    X = np.concatenate(X, axis=1)
-    # define labels
-    y = []
-    for s in range(n_of_classes):
-        y.append(np.full(len(seqs_list[s]), fill_value=s, dtype=np.int))
-    y = np.concatenate(y, axis=0)
-    #clf = svm.SVC()
+    if X is None or y is None:
+        X, y = _form_train_data_for_SVM(hmms, seqs_list, avails_list)
     scaler = preprocessing.StandardScaler().fit(X)
     X = scaler.transform(X)
     clf.fit(X, y)
     return clf, scaler
 
 
+def _form_class_data_for_SVM(hmms, seqs, avails=None):
+    X = [hmm.calc_derivatives(seqs, avails) for hmm in hmms]
+    X = np.concatenate(X, axis=1)
+    return X
+
+
 def classify_seqs_svm(seqs, hmms, clf, scaler, avails=None,
-                      algorithm='marginalization', n_neighbours=10):
+                      algorithm='marginalization', n_neighbours=10, X=None):
     """ Predict class label for each seq based on derivatives of likelihood
     function for that seq using SVM classifier
     
@@ -1024,11 +1037,11 @@ def classify_seqs_svm(seqs, hmms, clf, scaler, avails=None,
     predictions : list of ints
         list of class labels
     """
-    X = [hmm.calc_derivatives(seqs, avails) for hmm in hmms]
-    X = np.concatenate(X, axis=1)
-    print(X)
+    if X is None:
+        X = _form_class_data_for_SVM(hmms, seqs, avails)
+    #print(X)
     X = scaler.transform(X)
-    print(X)
+    #print(X)
     return clf.predict(X)
     
 

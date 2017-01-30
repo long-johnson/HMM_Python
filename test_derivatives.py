@@ -6,6 +6,7 @@ Testing derivatives calculations
 
 import numpy as np
 from sklearn import svm
+import time
 import GaussianHMM as ghmm
 
 sig_val = 0.1
@@ -53,6 +54,11 @@ for n in range(N):
         sig[n,m,:,:] = np.eye(Z) * sig_val
 hmm2 = ghmm.GHMM(N, M, Z, mu, sig, pi=pi, a=a, tau=tau)
 
+train_seqs1, _ = hmm1.generate_sequences(K, T, seed=1)
+train_seqs2, _ = hmm2.generate_sequences(K, T, seed=1)
+class_seqs1, _ = hmm1.generate_sequences(K, T, seed=2)
+class_seqs2, _ = hmm2.generate_sequences(K, T, seed=2)
+
 #
 # derivatves calculation
 #
@@ -68,29 +74,167 @@ hmm2 = ghmm.GHMM(N, M, Z, mu, sig, pi=pi, a=a, tau=tau)
 #
 # SVM classifer
 #
-print("training SVM")
-train_seqs1, _ = hmm1.generate_sequences(K, T, seed=1)
-train_seqs2, _ = hmm2.generate_sequences(K, T, seed=1)
-svm_params = svm.SVC(C=1.0, kernel='rbf', degree=3, gamma='auto', coef0=0.0,
-                     probability=False, shrinking=1, tol=1e-3, cache_size=500,
-                     verbose=True, )
-clf, scaler = ghmm.train_svm_classifier([hmm1, hmm2], [train_seqs1, train_seqs2],
-                                        svm_params)
-
-print("generating class seqs")
-class_seqs1, _ = hmm1.generate_sequences(K, T, seed=2)
-class_seqs2, _ = hmm2.generate_sequences(K, T, seed=2)
-
-print("predicting  using SVM")
-svm_predictions1 = ghmm.classify_seqs_svm(class_seqs1, [hmm1, hmm2], clf, scaler)
-svm_predictions2 = ghmm.classify_seqs_svm(class_seqs2, [hmm1, hmm2], clf, scaler)
-perc_svm = (np.count_nonzero(svm_predictions1 == 0) +
-            np.count_nonzero(svm_predictions2 == 1)) / (2.0*K) * 100.0
-print("SVM correct: {}%".format(perc_svm))
-
+#print("training SVM")
+#train_seqs1, _ = hmm1.generate_sequences(K, T, seed=1)
+#train_seqs2, _ = hmm2.generate_sequences(K, T, seed=1)
+#svm_params = svm.SVC(C=1.0, kernel='rbf', degree=3, gamma='auto', coef0=0.0,
+#                     probability=False, shrinking=1, tol=1e-3, cache_size=500,
+#                     verbose=True, )
+#clf, scaler = ghmm.train_svm_classifier([hmm1, hmm2], [train_seqs1, train_seqs2],
+#                                        svm_params)
+#
+#print("generating class seqs")
+#class_seqs1, _ = hmm1.generate_sequences(K, T, seed=2)
+#class_seqs2, _ = hmm2.generate_sequences(K, T, seed=2)
+#
+#print("predicting  using SVM")
+#svm_predictions1 = ghmm.classify_seqs_svm(class_seqs1, [hmm1, hmm2], clf, scaler)
+#svm_predictions2 = ghmm.classify_seqs_svm(class_seqs2, [hmm1, hmm2], clf, scaler)
+#perc_svm = (np.count_nonzero(svm_predictions1 == 0) +
+#            np.count_nonzero(svm_predictions2 == 1)) / (2.0*K) * 100.0
+#print("SVM correct: {}%".format(perc_svm))
+#
 print("predicting using likelihood")
 predictions1 = ghmm.classify_seqs(class_seqs1, [hmm1, hmm2])
 predictions2 = ghmm.classify_seqs(class_seqs2, [hmm1, hmm2])
 perc = (np.count_nonzero(predictions1 == 0) +
         np.count_nonzero(predictions2 == 1)) / (2.0*K) * 100.0
 print("Likelihood correct: {}%".format(perc))
+
+#
+# SVM RBF hypermarameters random search
+#
+#def SVM_RBF_generator(n, C_range, gamma_range, seed=None):
+#    if seed is not None:
+#        np.random.seed(seed)
+#    for i in range(n):
+#        C_exp = np.random.uniform(*C_range)
+#        gamma_exp = np.random.uniform(*gamma_range)
+#        yield 10.0 ** C_exp, 10.0 ** gamma_exp
+#
+#
+#X, y = ghmm._form_train_data_for_SVM([hmm1, hmm2], [train_seqs1, train_seqs2])
+#X_class1 = ghmm._form_class_data_for_SVM([hmm1, hmm2], class_seqs1)
+#X_class2 = ghmm._form_class_data_for_SVM([hmm1, hmm2], class_seqs2)
+#cv_grid_rbf = []
+#
+#start = time.time()
+#for C, gamma in SVM_RBF_generator(n=10, C_range=(5., 6.),
+#                                          gamma_range=(-8., -7.), seed=5):
+#    svm_params = svm.SVC(C=C, kernel='rbf', gamma=gamma)
+#                         verbose=False)
+#    clf, scaler = ghmm.train_svm_classifier([hmm1, hmm2],
+#                                            [train_seqs1, train_seqs2],
+#                                            svm_params, X=X, y=y)
+#    svm_predictions1 = ghmm.classify_seqs_svm(class_seqs1, [hmm1, hmm2], clf,
+#                                              scaler, X=X_class1)
+#    svm_predictions2 = ghmm.classify_seqs_svm(class_seqs2, [hmm1, hmm2], clf,
+#                                              scaler, X=X_class2)
+#    perc_svm = (np.count_nonzero(svm_predictions1 == 0) +
+#                np.count_nonzero(svm_predictions2 == 1)) / (2.0*K) * 100.0
+#    cv_grid.append([C, gamma, perc_svm])
+#    print(C, gamma, perc_svm)
+#    print("{:.0f} s passed".format(time.time() - start))
+#    
+#array_cv_grid_rbf = np.array(cv_grid_rbf)
+#array_cv_grid_rbf = array_cv_grid_rbf[array_cv_grid_rbf[:, 2].argsort()]
+#
+#from scipy.interpolate import griddata
+#import matplotlib.pyplot as plt
+#from mpl_toolkits.mplot3d import Axes3D
+#fig = plt.figure()
+#ax = fig.add_subplot(111, projection='3d')
+#ax.scatter(np.log10(array_cv_grid[:, 0]),
+#           np.log10(array_cv_grid[:, 1]),
+#           array_cv_grid[:, 2])
+#ax.set_xlabel('C')
+#ax.set_ylabel('gamma')
+#ax.set_zlabel('acc, %')
+#plt.show()
+
+
+#
+# SVM with polynomial kernel
+#
+start = time.time()
+X, y = ghmm._form_train_data_for_SVM([hmm1, hmm2], [train_seqs1, train_seqs2])
+print("{:.0f} s passed".format(time.time() - start))
+X_class1 = ghmm._form_class_data_for_SVM([hmm1, hmm2], class_seqs1)
+X_class2 = ghmm._form_class_data_for_SVM([hmm1, hmm2], class_seqs2)
+
+import GaussianHMM as ghmm
+start = time.time()
+svm_params = svm.SVC(C=0.036, kernel='poly', degree=5,
+                     gamma=1.26e-6, coef0=44.6, cache_size=500,
+                     max_iter=-1)
+clf, scaler = ghmm.train_svm_classifier([hmm1, hmm2],
+                                        [train_seqs1, train_seqs2],
+                                        svm_params, X=X, y=y)
+svm_predictions1 = ghmm.classify_seqs_svm(class_seqs1, [hmm1, hmm2], clf,
+                                          scaler, X=X_class1)
+svm_predictions2 = ghmm.classify_seqs_svm(class_seqs2, [hmm1, hmm2], clf,
+                                          scaler, X=X_class2)
+perc_svm = (np.count_nonzero(svm_predictions1 == 0) +
+            np.count_nonzero(svm_predictions2 == 1)) / (2.0*K) * 100.0
+print(perc_svm)
+print("{:.0f} s passed".format(time.time() - start))
+
+
+#
+# SVM polynomial kernel hypermarameters random search
+#
+#def SVM_poly_generator(n, C_range, gamma_range, coef0_range, degree_range, seed=None):
+#    if seed is not None:
+#        np.random.seed(seed)
+#    for i in range(n):
+#        C_exp = np.random.uniform(*C_range)
+#        gamma_exp = np.random.uniform(*gamma_range)
+#        coef0 = np.random.uniform(*coef0_range)
+#        degree = np.random.randint(*degree_range)
+#        yield 10.0 ** C_exp, 10.0 ** gamma_exp, coef0, degree
+#
+#
+#X, y = ghmm._form_train_data_for_SVM([hmm1, hmm2], [train_seqs1, train_seqs2])
+#X_class1 = ghmm._form_class_data_for_SVM([hmm1, hmm2], class_seqs1)
+#X_class2 = ghmm._form_class_data_for_SVM([hmm1, hmm2], class_seqs2)
+#cv_grid_poly = []
+#
+#start = time.time()
+#for C, gamma, coef0, degree in SVM_poly_generator(n=5000, C_range=(-3., 10.),
+#                                                  gamma_range=(-9., 3.),
+#                                                  coef0_range=(0.0, 100.0),
+#                                                  degree_range=(2, 5),
+#                                                  seed=2,
+#                                                  cache_size=500,
+#                                                  max_iter=100):
+#    svm_params = svm.SVC(C=C, kernel='poly', degree=degree,
+#                         gamma=gamma, coef0=coef0)
+#    clf, scaler = ghmm.train_svm_classifier([hmm1, hmm2],
+#                                            [train_seqs1, train_seqs2],
+#                                            svm_params, X=X, y=y)
+#    svm_predictions1 = ghmm.classify_seqs_svm(class_seqs1, [hmm1, hmm2], clf,
+#                                              scaler, X=X_class1)
+#    svm_predictions2 = ghmm.classify_seqs_svm(class_seqs2, [hmm1, hmm2], clf,
+#                                              scaler, X=X_class2)
+#    perc_svm = (np.count_nonzero(svm_predictions1 == 0) +
+#                np.count_nonzero(svm_predictions2 == 1)) / (2.0*K) * 100.0
+#    cv_grid_poly.append([C, gamma, coef0, degree, perc_svm])
+#    print(C, gamma, coef0, degree, perc_svm)
+#    print("{:.0f} s passed".format(time.time() - start))
+#    
+#array_cv_grid_poly = np.array(cv_grid_poly)
+#array_cv_grid_poly = array_cv_grid_poly[array_cv_grid_poly[:, 4].argsort()]
+#print(array_cv_grid_poly[-5:])
+
+#from scipy.interpolate import griddata
+#import matplotlib.pyplot as plt
+#from mpl_toolkits.mplot3d import Axes3D
+#fig = plt.figure()
+#ax = fig.add_subplot(111, projection='3d')
+#ax.scatter(np.log10(array_cv_grid_poly[:, 0]),
+#           np.log10(array_cv_grid_poly[:, 1]),
+#           array_cv_grid_poly[:, 2])
+#ax.set_xlabel('C')
+#ax.set_ylabel('gamma')
+#ax.set_zlabel('acc, %')
+#plt.show()
