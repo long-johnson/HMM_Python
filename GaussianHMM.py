@@ -701,7 +701,7 @@ class GHMM:
         p, it = self.train_baumwelch(seqs_glued, rtol, max_iter)
         return p, it
         
-    def calc_derivatives(self, seqs, avails=None):
+    def calc_derivatives(self, seqs, avails=None, wrt=None):
         """ Calculate derivatives of loglikelihood function for the given sequences
         with respect to each HMM parameter
         
@@ -711,6 +711,8 @@ class GHMM:
             given sequences
         avails : list (K) of boolean 1darrays (T), optional
             array that indicate the available observations in seq
+        wrt : list of strings {'pi', 'a', 'tau', 'mu', 'sig'}
+            with respect to which paramerers the derivatives should be taken
         Returns
         -------
         derivs : float 2darray K x (N + NxN + NxM + NxMxZ + NxMxZxZ)
@@ -719,25 +721,32 @@ class GHMM:
         """
         N, M, Z = self._mu.shape
         K = len(seqs)
-        n_of_derivs = N + N*N + N*M + N*M*Z + N*M*Z*Z
-        derivatives = np.empty((K, n_of_derivs))
+        #n_of_derivs = N + N*N + N*M + N*M*Z + N*M*Z*Z
+        #derivatives = np.empty((K, n_of_derivs))
+        derivatives = [np.empty(0) for k in range(K)]
         for k in range(K):
             seq = seqs[k]
             avail = avails[k] if avails is not None else\
                     np.full(len(seq), True, dtype=np.bool)
             b, g = self._calc_b(seq, avail)
             _, alpha, c = self._calc_forward_scaled(b)
-            d_loglike_wrt_pi = self._calc_derivs_pi(seq, avail, b, c, alpha)
-            d_loglike_wrt_a = self._calc_derivs_a(seq, avail, b, c, alpha)
-            d_loglike_wrt_tau = self._calc_derivs_tau(seq, avail, b, c, alpha, g)
-            d_loglike_wrt_mu = self._calc_derivs_mu(seq, avail, b, c, alpha, g)
-            d_loglike_wrt_sig = self._calc_derivs_sig(seq, avail, b, c, alpha, g)
-            derivatives[k] = np.concatenate((d_loglike_wrt_pi.flatten(),
-                                             d_loglike_wrt_a.flatten(),
-                                             d_loglike_wrt_tau.flatten(),
-                                             d_loglike_wrt_mu.flatten(),
-                                             d_loglike_wrt_sig.flatten()))
-        return derivatives
+            derivatives[k] = np.empty(0)
+            if wrt is None or 'pi' in wrt:
+                d_loglike_wrt_pi = self._calc_derivs_pi(seq, avail, b, c, alpha)
+                derivatives[k] = np.append(derivatives[k], d_loglike_wrt_pi)
+            if wrt is None or 'a' in wrt:
+                d_loglike_wrt_a = self._calc_derivs_a(seq, avail, b, c, alpha)
+                derivatives[k] = np.append(derivatives[k], d_loglike_wrt_a)
+            if wrt is None or 'tau' in wrt:
+                d_loglike_wrt_tau = self._calc_derivs_tau(seq, avail, b, c, alpha, g)
+                np.append(derivatives[k], d_loglike_wrt_tau)
+            if wrt is None or 'mu' in wrt:
+                d_loglike_wrt_mu = self._calc_derivs_mu(seq, avail, b, c, alpha, g)
+                derivatives[k] = np.append(derivatives[k], d_loglike_wrt_mu)
+            if wrt is None or 'sig' in wrt:
+                d_loglike_wrt_sig = self._calc_derivs_sig(seq, avail, b, c, alpha, g)
+                derivatives[k] = np.append(derivatives[k], d_loglike_wrt_sig)
+        return np.array(derivatives)
 
     def _calc_derivs_pi(self, seq, avail, b, c, alpha):
         N = self._n
@@ -958,7 +967,7 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, algorithm='marginalizati
     return hmm_best, p_max, iter_best, n_of_best
 
 
-def _form_train_data_for_SVM(hmms, seqs_list, avails_list=None):
+def _form_train_data_for_SVM(hmms, seqs_list, avails_list=None, wrt=None):
     n_of_classes = len(hmms)
     # define training samples
     X = []
@@ -969,7 +978,7 @@ def _form_train_data_for_SVM(hmms, seqs_list, avails_list=None):
         for s in range(n_of_classes):
             seqs = seqs_list[s]
             avails = avails_list[s] if avails_list is not None else None
-            Xvblock.append(hmm.calc_derivatives(seqs, avails))
+            Xvblock.append(hmm.calc_derivatives(seqs, avails, wrt))
         X.append(np.concatenate(Xvblock, axis=0))
     X = np.concatenate(X, axis=1)
     # define labels
@@ -1015,8 +1024,8 @@ def train_svm_classifier(hmms, seqs_list, clf, avails_list=None, X=None, y=None)
     return clf, scaler
 
 
-def _form_class_data_for_SVM(hmms, seqs, avails=None):
-    X = [hmm.calc_derivatives(seqs, avails) for hmm in hmms]
+def _form_class_data_for_SVM(hmms, seqs, avails=None, wrt=None):
+    X = [hmm.calc_derivatives(seqs, avails, wrt) for hmm in hmms]
     X = np.concatenate(X, axis=1)
     return X
 

@@ -95,12 +95,16 @@ class_seqs2, _ = hmm2.generate_sequences(K, T, seed=2)
 #            np.count_nonzero(svm_predictions2 == 1)) / (2.0*K) * 100.0
 #print("SVM correct: {}%".format(perc_svm))
 #
-print("predicting using likelihood")
-predictions1 = ghmm.classify_seqs(class_seqs1, [hmm1, hmm2])
-predictions2 = ghmm.classify_seqs(class_seqs2, [hmm1, hmm2])
-perc = (np.count_nonzero(predictions1 == 0) +
-        np.count_nonzero(predictions2 == 1)) / (2.0*K) * 100.0
-print("Likelihood correct: {}%".format(perc))
+
+
+#print("predicting using likelihood")
+#predictions1 = ghmm.classify_seqs(class_seqs1, [hmm1, hmm2])
+#predictions2 = ghmm.classify_seqs(class_seqs2, [hmm1, hmm2])
+#perc = (np.count_nonzero(predictions1 == 0) +
+#        np.count_nonzero(predictions2 == 1)) / (2.0*K) * 100.0
+#print("Likelihood correct: {}%".format(perc))
+
+
 
 #
 # SVM RBF hypermarameters random search
@@ -159,28 +163,33 @@ print("Likelihood correct: {}%".format(perc))
 #
 # SVM with polynomial kernel
 #
-#start = time.time()
-#X, y = ghmm._form_train_data_for_SVM([hmm1, hmm2], [train_seqs1, train_seqs2])
-#print("{:.0f} s passed".format(time.time() - start))
-#X_class1 = ghmm._form_class_data_for_SVM([hmm1, hmm2], class_seqs1)
-#X_class2 = ghmm._form_class_data_for_SVM([hmm1, hmm2], class_seqs2)
-#
-#import GaussianHMM as ghmm
-#start = time.time()
-#svm_params = svm.SVC(C=0.036, kernel='poly', degree=5,
-#                     gamma=1.26e-6, coef0=44.6, cache_size=500,
-#                     max_iter=-1)
-#clf, scaler = ghmm.train_svm_classifier([hmm1, hmm2],
-#                                        [train_seqs1, train_seqs2],
-#                                        svm_params, X=X, y=y)
-#svm_predictions1 = ghmm.classify_seqs_svm(class_seqs1, [hmm1, hmm2], clf,
-#                                          scaler, X=X_class1)
-#svm_predictions2 = ghmm.classify_seqs_svm(class_seqs2, [hmm1, hmm2], clf,
-#                                          scaler, X=X_class2)
-#perc_svm = (np.count_nonzero(svm_predictions1 == 0) +
-#            np.count_nonzero(svm_predictions2 == 1)) / (2.0*K) * 100.0
-#print(perc_svm)
-#print("{:.0f} s passed".format(time.time() - start))
+start = time.time()
+X, y = ghmm._form_train_data_for_SVM([hmm1, hmm2], [train_seqs1, train_seqs2],
+                                     wrt="a")
+print("{:.0f} s passed".format(time.time() - start))
+start = time.time()
+X_class1 = ghmm._form_class_data_for_SVM([hmm1, hmm2], class_seqs1,
+                                         wrt="a")
+X_class2 = ghmm._form_class_data_for_SVM([hmm1, hmm2], class_seqs2,
+                                         wrt="a")
+print("{:.0f} s passed".format(time.time() - start))
+
+import GaussianHMM as ghmm
+start = time.time()
+svm_params = svm.SVC(C=7.54540673e-03, kernel='poly', degree=4,
+                     gamma=1.28341964e-05, coef0=8.57725599e+01, cache_size=500,
+                     max_iter=100000)
+clf, scaler = ghmm.train_svm_classifier([hmm1, hmm2],
+                                        [train_seqs1, train_seqs2],
+                                        svm_params, X=X, y=y)
+svm_predictions1 = ghmm.classify_seqs_svm(class_seqs1, [hmm1, hmm2], clf,
+                                          scaler, X=X_class1)
+svm_predictions2 = ghmm.classify_seqs_svm(class_seqs2, [hmm1, hmm2], clf,
+                                          scaler, X=X_class2)
+perc_svm = (np.count_nonzero(svm_predictions1 == 0) +
+            np.count_nonzero(svm_predictions2 == 1)) / (2.0*K) * 100.0
+print(perc_svm)
+print("{:.0f} s passed".format(time.time() - start))
 
 
 #
@@ -198,20 +207,21 @@ def SVM_poly_generator(n, C_range, gamma_range, coef0_range, degree_range, seed=
 
 
 print("calc derivs for train")
-X, y = ghmm._form_train_data_for_SVM([hmm1, hmm2], [train_seqs1, train_seqs2])
+X, y = ghmm._form_train_data_for_SVM([hmm1, hmm2], [train_seqs1, train_seqs2],
+                                     wrt="a")
 print("calc derivs for class")
-X_class1 = ghmm._form_class_data_for_SVM([hmm1, hmm2], class_seqs1)
-X_class2 = ghmm._form_class_data_for_SVM([hmm1, hmm2], class_seqs2)
+X_class1 = ghmm._form_class_data_for_SVM([hmm1, hmm2], class_seqs1, wrt="a")
+X_class2 = ghmm._form_class_data_for_SVM([hmm1, hmm2], class_seqs2, wrt="a")
 cv_grid_poly = []
 winsound.Beep(500, 1000)
 
 print("start search")
 start = time.time()
 for C, gamma, coef0, degree in SVM_poly_generator(n=1000, C_range=(-3., 10.),
-                                                  gamma_range=(-11., -8.),
-                                                  coef0_range=(0.0, 100.0),
+                                                  gamma_range=(-11., 3.),
+                                                  coef0_range=(-100.0, 100.0),
                                                   degree_range=(3, 5),
-                                                  seed=11):
+                                                  seed=1):
     svm_params = svm.SVC(C=C, kernel='poly', degree=degree,
                          gamma=gamma, coef0=coef0, cache_size=500,
                          max_iter=1000000)
