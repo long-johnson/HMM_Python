@@ -713,14 +713,13 @@ class GHMM:
             array that indicate the available observations in seq
         Returns
         -------
-        derivs : float 2darray K x (N + NxN + NxM + NxMxZ + NxMxZ)
+        derivs : float 2darray K x (N + NxN + NxM + NxMxZ + NxMxZxZ)
             derivatives of loglikelihood function for each of the given sequences
             with respect to each HMM parameter
         """
-        # TODO: consider taking derivatives of non-diagonal covariations matrix
         N, M, Z = self._mu.shape
         K = len(seqs)
-        n_of_derivs = N + N*N + N*M + N*M*Z + N*M*Z
+        n_of_derivs = N + N*N + N*M + N*M*Z + N*M*Z*Z
         derivatives = np.empty((K, n_of_derivs))
         for k in range(K):
             seq = seqs[k]
@@ -792,38 +791,42 @@ class GHMM:
         T = len(seq)
         d_loglike_wrt_mu = np.empty((N, M, Z))
         d_a_wrt_mu = np.zeros((N, N))
-        for i, m, z in product(range(N), range(M), range(Z)):
-            d_b_wrt_mu = np.zeros((T, N))
-            for t in range(T):
-                d_b_wrt_mu[t, i] = 0.5 * tau[i, m] * g[t, i, m] * \
-                                   (seq[t, z] - mu[i, m, z]) / sig[i, m, z, z]
-            d_alpha0_wrt_mu = np.zeros(N)   # alpha0 unscaled
-            d_alpha0_wrt_mu[i] = pi[i] * d_b_wrt_mu[0, i]
-            d_loglike_wrt_mu[i, m] = self._calc_d_loglike_wrt_nu(avail, b, c, alpha,
-                                                                 d_alpha0_wrt_mu,
-                                                                 d_b_wrt_mu,
-                                                                 d_a_wrt_mu)
+        for i, m in product(range(N), range(M)): # loop over derivatives index
+            sig_inv = np.linalg.inv(sig[i, m])
+            full_d_b_wrt_mu = np.zeros((T, N, Z))
+            for t in range(T): # loop over t (explicitly) and i (subtly)
+                full_d_b_wrt_mu[t, i] = tau[i, m] * g[t, i, m] * \
+                                        (sig_inv @ (seq[t] - mu[i, m]))                            
+            for z in range(Z):  # loop over derivatives index
+                d_b_wrt_mu = full_d_b_wrt_mu[:, :, z]
+                d_alpha0_wrt_mu = np.zeros(N)   # alpha0 unscaled
+                d_alpha0_wrt_mu[i] = pi[i] * d_b_wrt_mu[0, i]
+                d_loglike_wrt_mu[i, m, z] = self._calc_d_loglike_wrt_nu(avail, b, c, alpha,
+                                                                        d_alpha0_wrt_mu,
+                                                                        d_b_wrt_mu,
+                                                                        d_a_wrt_mu)
         return d_loglike_wrt_mu
 
     def _calc_derivs_sig(self, seq, avail, b, c, alpha, g):
         N, M, Z = self._n, self._m, self._mu.shape[2]
         pi, tau, mu, sig = self._pi, self._tau, self._mu, self._sig
         T = len(seq)
-        d_loglike_wrt_sig = np.empty((N, M, Z))
+        d_loglike_wrt_sig = np.empty((N, M, Z, Z))
         d_a_wrt_sig = np.zeros((N, N))
-        for i, m, z in product(range(N), range(M), range(Z)):
-            d_b_wrt_sig = np.zeros((T, N))
-            for t in range(T):
-                temp = (seq[t, z] - mu[i, m, z]) / sig[i, m, z, z]
-                d_b_wrt_sig[t, i] = 0.5 * tau[i, m] * g[t, i, m] * \
-                                    (temp ** 2 - 1.0 / np.linalg.det(sig[i, m]))
-                                   
-            d_alpha0_wrt_sig = np.zeros(N)   # alpha0 unscaled
-            d_alpha0_wrt_sig[i] = pi[i] * d_b_wrt_sig[0, i]
-            d_loglike_wrt_sig[i, m] = self._calc_d_loglike_wrt_nu(avail, b, c, alpha,
-                                                                  d_alpha0_wrt_sig,
-                                                                  d_b_wrt_sig,
-                                                                  d_a_wrt_sig)
+        for i, m in product(range(N), range(M)): # loop over derivatives index
+            sig_inv = np.linalg.inv(sig[i, m])
+            full_d_b_wrt_sig = np.zeros((T, N, Z, Z))
+            for t in range(T): # loop over t (explicitly) and i (subtly)
+                temp = (seq[t] - mu[i, m])[np.newaxis].T # now - column vector
+                full_d_b_wrt_sig[t, i] = 0.5 * tau[i, m] * g[t, i, m] * \
+                                         (sig_inv @ temp @ temp.T @ sig_inv - sig_inv)
+            for z1, z2 in product(range(Z), range(Z)):  # loop over derivatives index
+                d_b_wrt_sig = full_d_b_wrt_sig[:, :, z1, z2]
+                d_alpha0_wrt_sig = np.zeros(N)   # alpha0 unscaled
+                d_alpha0_wrt_sig[i] = pi[i] * d_b_wrt_sig[0, i]
+                d_loglike_wrt_sig[i, m, z1, z2] = \
+                    self._calc_d_loglike_wrt_nu(avail, b, c, alpha, d_alpha0_wrt_sig,
+                                                d_b_wrt_sig, d_a_wrt_sig)
         return d_loglike_wrt_sig
 
     def _calc_d_loglike_wrt_nu(self, avail, b, c, alpha,
