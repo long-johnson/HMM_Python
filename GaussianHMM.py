@@ -804,8 +804,11 @@ class GHMM:
             sig_inv = np.linalg.inv(sig[i, m])
             full_d_b_wrt_mu = np.zeros((T, N, Z))
             for t in range(T): # loop over t (explicitly) and i (subtly)
-                full_d_b_wrt_mu[t, i] = tau[i, m] * g[t, i, m] * \
-                                        (sig_inv @ (seq[t] - mu[i, m]))                            
+                if avail[t]:
+                    full_d_b_wrt_mu[t, i] = tau[i, m] * g[t, i, m] * \
+                                            (sig_inv @ (seq[t] - mu[i, m]))
+                else:
+                    full_d_b_wrt_mu[t, i] = 0.0
             for z in range(Z):  # loop over derivatives index
                 d_b_wrt_mu = full_d_b_wrt_mu[:, :, z]
                 d_alpha0_wrt_mu = np.zeros(N)   # alpha0 unscaled
@@ -826,9 +829,12 @@ class GHMM:
             sig_inv = np.linalg.inv(sig[i, m])
             full_d_b_wrt_sig = np.zeros((T, N, Z, Z))
             for t in range(T): # loop over t (explicitly) and i (subtly)
-                temp = (seq[t] - mu[i, m])[np.newaxis].T # now - column vector
-                full_d_b_wrt_sig[t, i] = 0.5 * tau[i, m] * g[t, i, m] * \
-                                         (sig_inv @ temp @ temp.T @ sig_inv - sig_inv)
+                if avail[t]:
+                    temp = (seq[t] - mu[i, m])[np.newaxis].T # column vector
+                    full_d_b_wrt_sig[t, i] = 0.5 * tau[i, m] * g[t, i, m] * \
+                                             (sig_inv @ temp @ temp.T @ sig_inv - sig_inv)
+                else:
+                    full_d_b_wrt_sig[t, i] = 0.0
             for z1, z2 in product(range(Z), range(Z)):  # loop over derivatives index
                 d_b_wrt_sig = full_d_b_wrt_sig[:, :, z1, z2]
                 d_alpha0_wrt_sig = np.zeros(N)   # alpha0 unscaled
@@ -872,8 +878,8 @@ class GHMM:
             alphatilde = alpha[t-1] / c[t-1]
             d_alpha_wrt_nu = d_c_wrt_nu[t-1] * alphatilde + d_alphatilde_wrt_nu[t-1] * c[t-1]
             d_alphatilde_wrt_nu[t] = np.sum(d_alpha_wrt_nu * a_T +
-                               alpha[t-1] * d_a_wrt_nu_T, axis=1) * b[t] + \
-                               np.sum(alpha[t-1] * a_T, axis=1) * d_b_wrt_nu[t]
+                                     alpha[t-1] * d_a_wrt_nu_T, axis=1) * b[t] + \
+                                     np.sum(alpha[t-1] * a_T, axis=1) * d_b_wrt_nu[t]
         d_c_wrt_nu[-1] = -(c[-1] ** 2) * np.sum(d_alphatilde_wrt_nu[-1])
         return -np.sum(d_c_wrt_nu / c)
 
@@ -1001,7 +1007,7 @@ def train_svm_classifier(hmms, seqs_list, clf, avails_list=None, X=None, y=None)
         list of lists of sequences belonging to each class
     clf : sklearn.svm.SVC
         parameters of SVM classifier
-    avails_list :list (len(hmms)) of lists (K) of bool 1darrays (T), optional
+    avails_list : list (len(hmms)) of lists (K) of bool 1darrays (T), optional
         _
     
     len(hmms) == len(seqs_list) == len(avails_list)
