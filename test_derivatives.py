@@ -16,7 +16,7 @@ T = 100
 K = 100
 dA = 0.1
 is_gaps_places_different = True
-n_of_gaps = 10
+n_of_gaps = 20
 
 # hmm1
 pi = np.array([0.3, 0.4, 0.3])
@@ -135,16 +135,19 @@ class_seqs2, class_avails2 = make_missing_values(class_seqs_orig2, class_to_diss
 #print("SVM correct: {}%".format(perc_svm))
 #
 
+print("n_of_gaps = {}".format(n_of_gaps))
+for algorithm in ['marginalization', 'viterbi', 'viterbi_advanced1',
+                  'viterbi_advanced2']:
+    print("predicting using likelihood and {}".format(algorithm))
+    predictions1 = ghmm.classify_seqs(class_seqs1, [hmm1, hmm2], avails=class_avails1,
+                                      algorithm=algorithm)
+    predictions2 = ghmm.classify_seqs(class_seqs2, [hmm1, hmm2], avails=class_avails1,
+                                      algorithm=algorithm)
+    perc = (np.count_nonzero(predictions1 == 0) +
+            np.count_nonzero(predictions2 == 1)) / (2.0*K) * 100.0
+    print("Likelihood correct: {}%".format(perc))
 
-print("predicting using likelihood")
-predictions1 = ghmm.classify_seqs(class_seqs1, [hmm1, hmm2], avails=class_avails1)
-predictions2 = ghmm.classify_seqs(class_seqs2, [hmm1, hmm2], avails=class_avails1)
-perc = (np.count_nonzero(predictions1 == 0) +
-        np.count_nonzero(predictions2 == 1)) / (2.0*K) * 100.0
-print("Likelihood correct: {}%".format(perc))
-
-
-
+    
 #
 # SVM RBF hypermarameters random search
 #
@@ -203,46 +206,46 @@ print("Likelihood correct: {}%".format(perc))
 #                     max_iter=100000)
 
 
-wrt = None
+#wrt = None
+##
+## SVM with polynomial kernel
+##
+#start = time.time()
+#print("calc derivs for train")
+#X, y = ghmm._form_train_data_for_SVM([hmm1, hmm2],
+#                                     [train_seqs_orig1, train_seqs_orig2],
+#                                     wrt=wrt)
+#print("{:.0f} s passed".format(time.time() - start))
+#print("calc derivs for class1")
+#start = time.time()
+#X_class1 = ghmm._form_class_data_for_SVM([hmm1, hmm2], class_seqs1,
+#                                         avails=class_avails1,
+#                                         wrt=wrt)
+#print("calc derivs for class2")
+#X_class2 = ghmm._form_class_data_for_SVM([hmm1, hmm2], class_seqs2,
+#                                         avails=class_avails2,
+#                                         wrt=wrt)
+#print("{:.0f} s passed".format(time.time() - start))
 #
-# SVM with polynomial kernel
-#
-start = time.time()
-print("calc derivs for train")
-X, y = ghmm._form_train_data_for_SVM([hmm1, hmm2],
-                                     [train_seqs_orig1, train_seqs_orig2],
-                                     wrt=wrt)
-print("{:.0f} s passed".format(time.time() - start))
-print("calc derivs for class1")
-start = time.time()
-X_class1 = ghmm._form_class_data_for_SVM([hmm1, hmm2], class_seqs1,
-                                         avails=class_avails1,
-                                         wrt=wrt)
-print("calc derivs for class2")
-X_class2 = ghmm._form_class_data_for_SVM([hmm1, hmm2], class_seqs2,
-                                         avails=class_avails2,
-                                         wrt=wrt)
-print("{:.0f} s passed".format(time.time() - start))
-
-print("Training svm and classifying 1 time")
-import GaussianHMM as ghmm
-start = time.time()
-svm_params = svm.SVC(C=7.54540673e-03, kernel='poly', degree=4,
-                     gamma=1.28341964e-05, coef0=8.57725599e+01, cache_size=500,
-                     max_iter=100000)
-clf, scaler = ghmm.train_svm_classifier([hmm1, hmm2],
-                                        [train_seqs_orig1, train_seqs_orig2],
-                                        svm_params, X=X, y=y)
-svm_predictions1 = ghmm.classify_seqs_svm(class_seqs1, [hmm1, hmm2], clf,
-                                          scaler, avails=class_avails1,
-                                          X=X_class1)
-svm_predictions2 = ghmm.classify_seqs_svm(class_seqs2, [hmm1, hmm2], clf,
-                                          scaler, avails=class_avails2,
-                                          X=X_class2)
-perc_svm = (np.count_nonzero(svm_predictions1 == 0) +
-            np.count_nonzero(svm_predictions2 == 1)) / (2.0*K) * 100.0
-print(perc_svm)
-print("{:.0f} s passed".format(time.time() - start))
+#print("Training svm and classifying 1 time")
+#import GaussianHMM as ghmm
+#start = time.time()
+#svm_params = svm.SVC(C=7.54540673e-03, kernel='poly', degree=4,
+#                     gamma=1.28341964e-05, coef0=8.57725599e+01, cache_size=500,
+#                     max_iter=100000)
+#clf, scaler = ghmm.train_svm_classifier([hmm1, hmm2],
+#                                        [train_seqs_orig1, train_seqs_orig2],
+#                                        svm_params, X=X, y=y)
+#svm_predictions1 = ghmm.classify_seqs_svm(class_seqs1, [hmm1, hmm2], clf,
+#                                          scaler, avails=class_avails1,
+#                                          X=X_class1)
+#svm_predictions2 = ghmm.classify_seqs_svm(class_seqs2, [hmm1, hmm2], clf,
+#                                          scaler, avails=class_avails2,
+#                                          X=X_class2)
+#perc_svm = (np.count_nonzero(svm_predictions1 == 0) +
+#            np.count_nonzero(svm_predictions2 == 1)) / (2.0*K) * 100.0
+#print(perc_svm)
+#print("{:.0f} s passed".format(time.time() - start))
 
 
 #
