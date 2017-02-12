@@ -14,19 +14,26 @@ print ("Starting convergence experiment...")
 start_time = time.time()
 
 #
+# rtol=1e-3 is ideal for dA=0.0
+# rtol=1e-4 is ideal for dA=0.1
+# rtol=1e-5 is ideal for dA=0.2
+#
+
+#
 # research params
 #
-dA = 0.2
+#dA = 0.0
+dA = 0.1
 sig_val = 0.1
 n_of_launches = 1
 K = 100
 T = 100
 T_for_dist = 500
 K_for_dist = 100
-hmms0_size = 1
+hmms0_size = 5
 max_iter = 10000
 is_using_true_hmm_for_hmms0 = False
-rtol_range = np.array([1e-1**i for i in range(1,7)])
+rtol_range = np.array([1e-1**i for i in range(1,6)])
 is_gaps_places_different = True
 n_of_gaps = int(T * 0)
 algorithm = 'marginalization'
