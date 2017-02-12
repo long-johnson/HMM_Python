@@ -701,7 +701,9 @@ class GHMM:
         p, it = self.train_baumwelch(seqs_glued, rtol, max_iter)
         return p, it
         
-    def calc_derivatives(self, seqs, avails=None, wrt=None):
+    def calc_derivatives(self, seqs, avails=None, wrt=None,
+                         algorithm_gaps='marginalization',
+                         n_neighbours=10):
         """ Calculate derivatives of loglikelihood function for the given sequences
         with respect to each HMM parameter
         
@@ -719,15 +721,27 @@ class GHMM:
             derivatives of loglikelihood function for each of the given sequences
             with respect to each HMM parameter
         """
+        assert(algorithm_gaps in ['marginalization', 'viterbi', 'gluing', 'mean'])
         N, M, Z = self._mu.shape
         K = len(seqs)
-        #n_of_derivs = N + N*N + N*M + N*M*Z + N*M*Z*Z
-        #derivatives = np.empty((K, n_of_derivs))
         derivatives = [np.empty(0) for k in range(K)]
         for k in range(K):
             seq = seqs[k]
-            avail = avails[k] if avails is not None else\
-                    np.full(len(seq), True, dtype=np.bool)
+            avail = avails[k] if avails is not None\
+                    else np.full(len(seq), True, dtype=np.bool)
+            if algorithm_gaps == 'viterbi':
+                states = self.decode_viterbi([seq], avails=[avail])[0]
+                seq = self.impute_by_states([seq], [avail], [states])[0]
+            if algorithm_gaps == 'gluing':
+                seq = seq[avail]    # fancy indexing
+            if algorithm_gaps == 'mean':
+                seqs_imp, avails_imp = \
+                    imp.impute_by_n_neighbours([seq], [avail], n_neighbours,
+                                               method='mean')
+                seq = imp.impute_by_whole_seq(seqs_imp, avails_imp,
+                                              method='mean')[0]
+            if algorithm_gaps in ['viterbi', 'gluing', 'mean']:
+                avail = np.full(len(seq), True, dtype=np.bool)
             b, g = self._calc_b(seq, avail)
             _, alpha, c = self._calc_forward_scaled(b)
             derivatives[k] = np.empty(0)
@@ -866,6 +880,7 @@ class GHMM:
         d_a_wrt_nu : float 1darray (NxN)
             _
         """
+        #print("---!!!---")
         N = self._n
         a_T = np.transpose(self._a)
         d_a_wrt_nu_T = np.transpose(d_a_wrt_nu)
@@ -874,13 +889,23 @@ class GHMM:
         d_alphatilde_wrt_nu[0] = d_alpha0_wrt_nu
         d_c_wrt_nu = np.empty(T)
         for t in range(1, T):
+            #print("!!!")
+            #print(c)
+            #print(c[t-1])
+            #print(c[t-1] ** 2)
+            #print(np.sum(d_alphatilde_wrt_nu[t-1]))
             d_c_wrt_nu[t-1] = -(c[t-1] ** 2) * np.sum(d_alphatilde_wrt_nu[t-1])
+            #print(d_c_wrt_nu[t-1])
             alphatilde = alpha[t-1] / c[t-1]
+            #print(alphatilde)
             d_alpha_wrt_nu = d_c_wrt_nu[t-1] * alphatilde + d_alphatilde_wrt_nu[t-1] * c[t-1]
+            #print(d_alpha_wrt_nu)
             d_alphatilde_wrt_nu[t] = np.sum(d_alpha_wrt_nu * a_T +
                                      alpha[t-1] * d_a_wrt_nu_T, axis=1) * b[t] + \
                                      np.sum(alpha[t-1] * a_T, axis=1) * d_b_wrt_nu[t]
+            #print(d_alphatilde_wrt_nu[t])
         d_c_wrt_nu[-1] = -(c[-1] ** 2) * np.sum(d_alphatilde_wrt_nu[-1])
+        #print(d_c_wrt_nu)
         return -np.sum(d_c_wrt_nu / c)
 
 
@@ -929,7 +954,7 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, algorithm='marginalizati
         number of the initial approximation that gave the best hmm
     """
     assert algorithm in ('marginalization', 'gluing', 'viterbi', 'mean'),\
-        "Invalid algorithm '{}'".format(algorithm)
+                         "Invalid algorithm '{}'".format(algorithm)
     if hmms0 is None:
         mu_est, sig_est = estimate_mu_sig(seqs, N, M, Z, avails)
         if verbose:
@@ -953,11 +978,9 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, algorithm='marginalizati
         if algorithm == 'gluing':
             p, iteration = hmm.train_baumwelch_gluing(seqs, rtol, max_iter, avails)
         if algorithm == 'viterbi':
-            p, iteration = hmm.train_bauwelch_impute_viterbi(seqs, rtol, 
-                                                             max_iter, avails)
+            p, iteration = hmm.train_bauwelch_impute_viterbi(seqs, rtol, max_iter, avails)
         if algorithm == 'mean':
-            p, iteration = hmm.train_bauwelch_impute_mean(seqs, rtol, 
-                                                          max_iter, avails)
+            p, iteration = hmm.train_bauwelch_impute_mean(seqs, rtol, max_iter, avails)
         if (p_max < p and np.isfinite(p)):
             hmm_best = hmm
             p_max = p
@@ -973,7 +996,12 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, algorithm='marginalizati
     return hmm_best, p_max, iter_best, n_of_best
 
 
-def _form_train_data_for_SVM(hmms, seqs_list, avails_list=None, wrt=None):
+def _form_train_data_for_SVM(hmms, seqs_list, avails_list=None, wrt=None,
+                             algorithm_gaps='marginalization', n_neighbours=10):
+    """
+    wrt : list of strings {‘pi’, ‘a’, ‘tau’, ‘mu’, ‘sig’}
+        with respect to which paramerers the derivatives should be taken
+    """
     n_of_classes = len(hmms)
     # define training samples
     X = []
@@ -984,7 +1012,9 @@ def _form_train_data_for_SVM(hmms, seqs_list, avails_list=None, wrt=None):
         for s in range(n_of_classes):
             seqs = seqs_list[s]
             avails = avails_list[s] if avails_list is not None else None
-            Xvblock.append(hmm.calc_derivatives(seqs, avails, wrt))
+            Xvblock.append(hmm.calc_derivatives(seqs, avails, wrt=wrt, 
+                                                algorithm_gaps=algorithm_gaps,
+                                                n_neighbours=n_neighbours))
         X.append(np.concatenate(Xvblock, axis=0))
     X = np.concatenate(X, axis=1)
     # define labels
@@ -995,7 +1025,8 @@ def _form_train_data_for_SVM(hmms, seqs_list, avails_list=None, wrt=None):
     return X, y
 
 
-def train_svm_classifier(hmms, seqs_list, clf, avails_list=None, X=None, y=None):
+def train_svm_classifier(hmms, seqs_list, clf, avails_list=None, X=None, y=None, wrt=None,
+                         algorithm_gaps='marginalization', n_neighbours=10):
     """ Train svm classifier that classifies sequences based on their 
     derivatives of likelihood function with respect to hmm params
     
@@ -1009,8 +1040,10 @@ def train_svm_classifier(hmms, seqs_list, clf, avails_list=None, X=None, y=None)
         parameters of SVM classifier
     avails_list : list (len(hmms)) of lists (K) of bool 1darrays (T), optional
         _
-    
-    len(hmms) == len(seqs_list) == len(avails_list)
+    wrt : list of strings {‘pi’, ‘a’, ‘tau’, ‘mu’, ‘sig’}
+        with respect to which paramerers the derivatives should be taken
+        
+    len(hmms) == len(seqs_list) == len(avails_list)  
     
     Returns
     -------
@@ -1023,21 +1056,29 @@ def train_svm_classifier(hmms, seqs_list, clf, avails_list=None, X=None, y=None)
            (avails_list is None or len(seqs_list) == len(avails_list)))
     # define training samples
     if X is None or y is None:
-        X, y = _form_train_data_for_SVM(hmms, seqs_list, avails_list)
+        X, y = _form_train_data_for_SVM(hmms, seqs_list, avails_list, wrt=wrt,
+                                        algorithm_gaps=algorithm_gaps,
+                                        n_neighbours=n_neighbours)
     scaler = preprocessing.StandardScaler().fit(X)
     X = scaler.transform(X)
     clf.fit(X, y)
     return clf, scaler
 
 
-def _form_class_data_for_SVM(hmms, seqs, avails=None, wrt=None):
-    X = [hmm.calc_derivatives(seqs, avails, wrt) for hmm in hmms]
+def _form_class_data_for_SVM(hmms, seqs, avails=None, wrt=None,
+                             algorithm_gaps='marginalization', n_neighbours=10):
+    """
+    wrt : list of strings {‘pi’, ‘a’, ‘tau’, ‘mu’, ‘sig’}
+        with respect to which paramerers the derivatives should be taken
+    """
+    X = [hmm.calc_derivatives(seqs, avails, wrt=wrt, algorithm_gaps=algorithm_gaps,
+                              n_neighbours=n_neighbours) for hmm in hmms]
     X = np.concatenate(X, axis=1)
     return X
 
 
-def classify_seqs_svm(seqs, hmms, clf, scaler, avails=None,
-                      algorithm='marginalization', n_neighbours=10, X=None):
+def classify_seqs_svm(seqs, hmms, clf, scaler, avails=None, wrt=None,
+                      algorithm_gaps='marginalization', n_neighbours=10, X=None):
     """ Predict class label for each seq based on derivatives of likelihood
     function for that seq using SVM classifier
     
@@ -1049,6 +1090,8 @@ def classify_seqs_svm(seqs, hmms, clf, scaler, avails=None,
         list of hmms each of which corresponds to a class
     clf : sklearn.svm.SVC
         SVM classifier
+    wrt : list of strings {‘pi’, ‘a’, ‘tau’, ‘mu’, ‘sig’}
+        with respect to which paramerers the derivatives should be taken
         
     Returns
     -------
@@ -1056,38 +1099,37 @@ def classify_seqs_svm(seqs, hmms, clf, scaler, avails=None,
         list of class labels
     """
     if X is None:
-        X = _form_class_data_for_SVM(hmms, seqs, avails)
-    #print(X)
+        X = _form_class_data_for_SVM(hmms, seqs, avails, wrt=wrt,
+                                     algorithm_gaps=algorithm_gaps)
     X = scaler.transform(X)
-    #print(X)
     return clf.predict(X)
     
 
 def estimate_mu_sig(seqs, N, M, Z, avails=None):
     """ Estimate values of mu and sig basing on the sequences.
-        mu elements are uniformly scattered from min to max seq element
-        sig matrixes are diagonal scaled accordingly to min and max seq elements
-        
-        Parameters
-        ----------
-        seqs : list of 2darrays (TxZ)
-            list of training sequences
-        N : int
-            number of HMM states
-        M : int
-            number of distribution mixture components
-        Z : int
-            dimensionality of observations
-        avails : list of boolean 1darrays (T), optional
-            arrays that indicate whether each element of each sequence is 
-            not missing (availiable), i.e. True - not missing, False - is missing
-        
-        Returns
-        -------
-        mu : 3darray (NxMxZ)
-            means of normal distributions 
-        sig : 4darray (NxMxZxZ)
-            covariation matrix of normal distributions
+    mu elements are uniformly scattered from min to max seq element
+    sig matrixes are diagonal scaled accordingly to min and max seq elements
+    
+    Parameters
+    ----------
+    seqs : list of 2darrays (TxZ)
+        list of training sequences
+    N : int
+        number of HMM states
+    M : int
+        number of distribution mixture components
+    Z : int
+        dimensionality of observations
+    avails : list of boolean 1darrays (T), optional
+        arrays that indicate whether each element of each sequence is 
+        not missing (availiable), i.e. True - not missing, False - is missing
+    
+    Returns
+    -------
+    mu : 3darray (NxMxZ)
+        means of normal distributions 
+    sig : 4darray (NxMxZxZ)
+        covariation matrix of normal distributions
     """
     # TODO: add more clever heuristics to this procedure
     K = len(seqs)
@@ -1110,9 +1152,10 @@ def estimate_mu_sig(seqs, N, M, Z, avails=None):
     return mu, sig
 
 
-def classify_seqs(seqs, hmms, avails=None, algorithm='marginalization',
-                  n_neighbours=10):
-    """ Label each seq from seqs with number of the hmm which suits seq better
+def classify_seqs_mlc(seqs, hmms, avails=None, algorithm_gaps='marginalization',
+                      n_neighbours=10):
+    """ Classify sequences using maximum likelihood classifier (mlc)
+    Label each seq from seqs with number of the hmm which suits seq better
         'suits' i.e. has the biggest likelihood of generating tht sequence
     
     Parameters
@@ -1123,7 +1166,7 @@ def classify_seqs(seqs, hmms, avails=None, algorithm='marginalization',
         list of hmms each of which corresponds to a class
     avails : list of boolean 1darrays (T), optional
         arrays that indicate whether each element of each sequence is availiable
-    algorithm : algorithm to be used to fight missing values
+    algorithm_gaps : algorithm to be used to fight missing values
     n_neighbours : how many neighbours to account for when imputing by the mean
         of neighbours (works only with 'mean' algorithm)
         
@@ -1132,8 +1175,8 @@ def classify_seqs(seqs, hmms, avails=None, algorithm='marginalization',
     predictions : int 1darray
         array of class labels
     """
-    assert algorithm in ['marginalization', 'gluing', 'viterbi', 'mean',
-                         'viterbi_advanced1', 'viterbi_advanced2']
+    assert algorithm_gaps in ['marginalization', 'gluing', 'viterbi', 'mean',
+                              'viterbi_advanced1', 'viterbi_advanced2']
     if avails is None:
         avails = [np.full(len(seqs[k]), True, dtype=np.bool) for k in range(len(seqs))]
 
@@ -1141,7 +1184,7 @@ def classify_seqs(seqs, hmms, avails=None, algorithm='marginalization',
     for k in range(len(seqs)):
         seq = copy.deepcopy(seqs[k])
         avail = copy.deepcopy(avails[k])
-        if algorithm[:-1] == 'viterbi_advanced':
+        if algorithm_gaps[:-1] == 'viterbi_advanced':
             # viterbi imputation with advanced decision rule
             # calc probs of sequence imputed by each of the HMMs being 
             # generated by each of these HMMs
@@ -1169,9 +1212,9 @@ def classify_seqs(seqs, hmms, avails=None, algorithm='marginalization',
                     break
             # check the more general condition for a less confident prediction
             if not is_label_checked_best:
-                if algorithm == 'viterbi_advanced1':
+                if algorithm_gaps == 'viterbi_advanced1':
                     label_best = np.argmax(np.diag(probs))
-                if algorithm == 'viterbi_advanced2':
+                if algorithm_gaps == 'viterbi_advanced2':
                     diag = np.diag(probs)
                     np.fill_diagonal(probs, 0.0)
                     criteria = diag - np.sum(probs, axis=1)
@@ -1181,16 +1224,16 @@ def classify_seqs(seqs, hmms, avails=None, algorithm='marginalization',
             label_best = 0
             for label in range(len(hmms)):
                 hmm = hmms[label]
-                if algorithm == 'marginalization':
+                if algorithm_gaps == 'marginalization':
                     p = hmm.calc_loglikelihood([seq], [avail])
-                if algorithm == 'viterbi':
+                if algorithm_gaps == 'viterbi':
                     states = hmm.decode_viterbi([seq], avails=[avail])[0]
                     seq = hmm.impute_by_states([seq], [avail], [states])[0]
                     p = hmm.calc_loglikelihood([seq])
-                if algorithm == 'gluing':
+                if algorithm_gaps == 'gluing':
                     glued = seq[avail]  # fancy indexing
                     p = hmm.calc_loglikelihood([glued])
-                if algorithm == 'mean':
+                if algorithm_gaps == 'mean':
                     seqs_imp, avails_imp = \
                         imp.impute_by_n_neighbours([seq], [avail], n_neighbours,
                                                    method='mean')
