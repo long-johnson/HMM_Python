@@ -910,9 +910,9 @@ class GHMM:
         return -np.sum(d_c_wrt_nu / c)
 
 
-def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, algorithm='marginalization',
-                             avails=None, hmms0=None, rtol=1e-1, max_iter=None,
-                             initial_guess='gmm', verbose=False):
+def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, avails=None, rtol=1e-1, max_iter=None,
+                             algorithm='marginalization', hmms0=None, verbose=False,
+                             initial_guess='gmm', covariance_type='diag'):
     """ Train several hmms using baumwelch algorithm and choose the best one
     
     Parameters
@@ -963,7 +963,7 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, algorithm='marginalizati
             mu_est, sig_est = estimate_mu_sig_uniformly(seqs, N, M, avails)
         if initial_guess == 'gmm':
             mu_est, sig_est = estimate_mu_sig_gmm(seqs, N, M, avails,
-                                                  covariance_type='full')
+                                                  covariance_type=covariance_type)
         if verbose:
             print ("mu_est: {}".format(mu_est))
             print ("sig_est: {}".format(sig_est))

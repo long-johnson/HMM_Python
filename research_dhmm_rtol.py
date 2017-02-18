@@ -16,7 +16,7 @@ start_time = time.time()
 #
 # research params
 #
-dA = 0.4
+dA = 0.1
 n_of_launches = 1
 K = 100
 T = 100

@@ -5,32 +5,48 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import time
 import GaussianHMM as ghmm
-import copy
+import winsound
 from sklearn import svm
-import StandardImputationMethods as imp
-from gaps_generation import make_missing_values
-from gaps_generation import gen_gaps_positions
+from research import make_missing_values
+from research import gen_gaps_positions
+from research import evaluate_classification
+from research import evaluate_decoding_imputation
+import HMM
+
 
 start_time = time.time()
 
-n_of_launches = 5
+# missing data settings
+n_of_gaps_train_hmm = 0
+n_of_gaps_train_svm = (n_of_gaps_train_hmm, 91)
+gaps_range = list(range(0, 100, 10))
+is_gaps_places_different = True
+# hmms settings
 dA = 0.1
 sig_val = 0.1
+# training settings
 rtol = 1e-4
+max_iter = 10000
+hmms0_size = 5
+# derivatives calculation settings
 wrt = ['a']
-n_of_gaps_train = 10
+# sequence generation settings
 T = 100
 K = 100
-hmms0_size = 5
-max_iter = 10000
-
-is_gaps_places_different = True
+# recognition settings
+n_neighbours = 10
+# experiment settings
+n_of_launches = 10
 is_verbose = False
 out_dir = "out/"
-n_neighbours = 10
-
-
-gaps_range = list(range(0, 100, 10))
+# svm classifier settings
+# optimal params for trained hmms, dA=0.1, wrt='a', n_of_gaps_class=(0, 90), 
+# n_of_gaps_train_hmm = 0, n_of_gaps_train_svm = (0, 90), gmm init diag, 80.5%
+svm_params = svm.SVC(
+C=3457488.0477916673, kernel='rbf', degree=3,
+gamma=5.269878287581289e-08, coef0=-10.104309103960844,
+                     cache_size=500,
+                     max_iter=100000)
 
 #
 # HMMs
@@ -56,9 +72,10 @@ for n in range(N):
         sig[n,m,:,:] = np.eye(Z) * sig_val
 hmm1_orig = ghmm.GHMM(N, M, Z, mu, sig, pi=pi, a=a, tau=tau)
 
-filename = "ghmm_dA={}_sigval={}_N={}_M={}_Z={}_K={}_T={}"\
-    "_launches={}_diagcov={}_n_neighbours={}"\
-    .format(dA, sig_val, N, M, Z, K, T, n_of_launches, ghmm.is_cov_diagonal, n_neighbours)
+filename = "ghmm_dA={}_sigval={}_N={}_M={}_Z={}_K={}_T={}_n_of_gaps_train={}"\
+    "_launches={}_diagcov={}_n_neighbours={}_n_of_gaps_train_svm={}_gmminit"\
+    .format(dA, sig_val, N, M, Z, K, T, n_of_gaps_train_hmm, n_of_launches,
+            ghmm.is_cov_diagonal, n_neighbours, n_of_gaps_train_svm)
 
 # hmm 2
 pi = np.array([0.3, 0.4, 0.3])
@@ -81,85 +98,10 @@ for n in range(N):
         sig[n,m,:,:] = np.eye(Z) * sig_val
 hmm2_orig = ghmm.GHMM(N, M, Z, mu, sig, pi=pi, a=a, tau=tau)
 
-
-def evaluate_classification(class_percent, step, hmms,
-                            seqs1, seqs2, avails1=None, avails2=None,
-                            algorithm_class='mlc',
-                            algorithm_gaps='marginalization', n_neighbours=10,
-                            clf=None, scaler=None, wrt=None,
-                            verbose=False):
-    """ Code to evaluate hmm training performance on given sequences
-    algorithm_class: {'MLC' - maximum likelihood classifier, 'svm'}
-    algorithm_gaps: {'marginalization', 'viterbi', 'viterbi_advanced1',
-                     'viterbi_advanced2', 'mean'}
-    n_neighbours works only with ‘mean’ algorithm_gaps
-    clf and scaler work only with 'svm' algorithm
-    'viterbi_advanced1' and 'viterbi_advanced2'
-    """
-    print("algorithm_class = {}, algorithm_gaps = {}".format(algorithm_class,
-                                                             algorithm_gaps))
-    if algorithm_class == 'mlc':
-        pred1 = ghmm.classify_seqs_mlc(seqs1, hmms, avails=avails1,
-                                       algorithm_gaps=algorithm_gaps)
-        pred2 = ghmm.classify_seqs_mlc(seqs2, hmms, avails=avails2,
-                                       algorithm_gaps=algorithm_gaps)
-    if algorithm_class == 'svm':
-        pred1 = ghmm.classify_seqs_svm(seqs1, hmms, clf, scaler, avails=avails1,
-                                       algorithm_gaps=algorithm_gaps, wrt=wrt)
-        pred2 = ghmm.classify_seqs_svm(seqs2, hmms, clf, scaler, avails=avails2,
-                                       algorithm_gaps=algorithm_gaps, wrt=wrt)
-    percent = (np.count_nonzero(pred1 == 0) +
-               np.count_nonzero(pred2 == 1)) / (2.0*K) * 100.0
-    class_percent[step] += percent
-    print("Correctly classified {} %".format(percent))
-
-
-def evaluate_decoding_imputation(decoded_percents, imputed_sum_squares_diff, step,
-                                 hmm: ghmm.GHMM, seqs, states_list_orig,
-                                 seqs_orig, avails, algorithm_gaps='viterbi',
-                                 n_neighbours=10, verbose=False):
-    """ Code to evaluate hmm decoding  and imputation performance on
-    given sequences. n_neighbours works only with ‘mean’ algorithm
-    
-    sum_squares_diff - average (of K sequences) of average (of length of each sequence)
-        squared difference between original sequence and imputed
-    """
-    assert algorithm_gaps in ['viterbi', 'mean']
-    print("algorithm = {}".format(algorithm_gaps))
-    if algorithm_gaps == 'viterbi':
-        # decode
-        states_list_decoded = hmm.decode_viterbi(seqs, avails)
-        # then impute
-        seqs_imp = hmm.impute_by_states(seqs, avails, states_list_decoded)
-    if algorithm_gaps == 'mean':
-        # impute
-        seqs_imp, avails_imp = \
-            imp.impute_by_n_neighbours(seqs, avails, n_neighbours,
-                                       method='mean')
-        seqs_imp = imp.impute_by_whole_seq(seqs_imp, avails_imp,
-                                           method='mean')
-        # then decode
-        states_list_decoded = hmm.decode_viterbi(seqs_imp)
-    # compare decoded states
-    compare = np.equal(states_list_orig, states_list_decoded)
-    percent = 100.0 * np.count_nonzero(compare) / compare.size
-    decoded_percents[step] += percent
-    print("Correctly decoded {} %".format(percent))
-    # compare imputed sequences
-    # TODO: compare only those observations which were missing
-    sum_squares_diff = 0.0
-    K = len(seqs_orig)
-    for k in range(K):
-        T = len(seqs_orig[k])
-        sum_squares_diff += np.sum((seqs_orig[k] - seqs_imp[k]) ** 2) / T
-    sum_squares_diff /= K
-    imputed_sum_squares_diff[step] += sum_squares_diff
-    print("Imputed sum_squares_diff: {}".format(sum_squares_diff))
-
 #
 # Research
 #
-
+print("n_of_gaps_train_hmm = {}".format(n_of_gaps_train_hmm))
 #
 # Train HMMs
 #
@@ -167,36 +109,45 @@ print("training hmms")
 train_seqs_orig1, _ = hmm1_orig.generate_sequences(K, T, seed=565)
 train_seqs_orig2, _ = hmm2_orig.generate_sequences(K, T, seed=565)
 
-# generate gaps posititons in the taining sequences
+# generate gaps posititons in the training sequences
 np.random.seed(111)
 to_dissapears1 = gen_gaps_positions(K, T, is_gaps_places_different)
 to_dissapears2 = gen_gaps_positions(K, T, is_gaps_places_different)
 # mark some elements as missing
 # hmm 1
 train_seqs1, train_avails1 = make_missing_values(train_seqs_orig1, to_dissapears1,
-                                                 n_of_gaps_train)
+                                                 n_of_gaps_train_hmm)
 # hmm 2
 train_seqs2, train_avails2 = make_missing_values(train_seqs_orig2, to_dissapears2,
-                                                 n_of_gaps_train)
+                                                 n_of_gaps_train_hmm)
 # apply baumwelch to train hmms
 np.random.seed(565)
-hmm1, _, iter1, n_of_best1 = \
-    ghmm.train_best_hmm_baumwelch(train_seqs1, hmms0_size, N, M, Z, avails=train_avails1,
-                                  hmms0=None, rtol=rtol, max_iter=max_iter)
+hmm1, _, iter1, n_of_best1 = ghmm.train_best_hmm_baumwelch(
+                                 train_seqs1, hmms0_size, N, M, Z, avails=train_avails1,
+                                 hmms0=None, rtol=rtol, max_iter=max_iter
+                             )
 np.random.seed(565)
-hmm2, _, iter2, n_of_best2 = \
-    ghmm.train_best_hmm_baumwelch(train_seqs2, hmms0_size, N, M, Z, avails=train_avails2,
-                                  hmms0=None, rtol=rtol, max_iter=max_iter)
+hmm2, _, iter2, n_of_best2 = ghmm.train_best_hmm_baumwelch(
+                                 train_seqs2, hmms0_size, N, M, Z, avails=train_avails2,
+                                 hmms0=None, rtol=rtol, max_iter=max_iter
+                             )
 print("training completed, iter={}/{}\nhmm1={}\nhmm2={}".format(iter1, iter2, hmm1, hmm2))
+distance = HMM.calc_symmetric_distance(hmm1, hmm2, 100, 200)
+print("distance between hmms = {}".format(distance))
+winsound.Beep(1000, 1000)
 
-
+#
 # train SVM classifier
-
+#
+# mark some elements as missing with varying percent of gaps between sequences
+# hmm 1
+train_seqs1, train_avails1 = make_missing_values(train_seqs_orig1, to_dissapears1,
+                                                 n_of_gaps_train_svm)
+# hmm 2
+train_seqs2, train_avails2 = make_missing_values(train_seqs_orig2, to_dissapears2,
+                                                 n_of_gaps_train_svm)
+# train
 print("training SVM classifier")
-svm_params = svm.SVC(C=46572.945582839573, kernel='poly', degree=3,
-                     gamma=1.6980743332669287e-06, coef0=-50.584281134189666,
-                     cache_size=500,
-                     max_iter=100000)
 clf, scaler = ghmm.train_svm_classifier([hmm1, hmm2],
                                         [train_seqs1, train_seqs2],
                                         svm_params, [train_avails1, train_avails2],
@@ -385,11 +336,11 @@ mpl.rc('font', size=12)
 
 plt.figure(1)
 suptitle = u"Исследование алгоритмов классификации последовательностей с пропусками "\
-           u"Число скрытых состояний N = {}, число символов M = {}, "\
-           u"число обучающих последовательностей K = {}, "\
-           u"длина обучающих последовательностей T = {}, \n"\
-           u"число запусков эксперимента n_of_launches = {} \n"\
-           .format(N, M, K, T, n_of_launches)
+           u"Число скрытых состояний N = {}, число символов M = {}, \n"\
+           u"число/длина обучающих последовательностей K = {}/T={},"\
+           u"число запусков эксперимента n_of_launches = {}, # пропусков в обучающих СММ={}\n"\
+           u"# пропусков в обучающих SVM={}\n"\
+           .format(N, M, K, T, n_of_launches, n_of_gaps_train_hmm, n_of_gaps_train_svm)
 plt.suptitle(suptitle)
 plt.ylabel(u"Верно распознанные, %")
 plt.xlabel(u"Процент пропусков")
@@ -406,6 +357,7 @@ plt.plot(xs, class_percents_svm_marg, '-', label=u"SVM, Маргинализац
 plt.legend()
 plt.show()
 plt.savefig(out_dir + "/class_" + filename + ".png")
+plt.close()
 
 #plt.figure(2)
 #suptitle = u"Исследование алгоритмов декодирования последовательностей с пропусками "\
