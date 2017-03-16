@@ -745,7 +745,6 @@ class GHMM:
                 avail = np.full(len(seq), True, dtype=np.bool)
             b, g = self._calc_b(seq, avail)
             _, alpha, c = self._calc_forward_scaled(b)
-            derivatives[k] = np.empty(0)
             if wrt is None or 'pi' in wrt:
                 d_loglike_wrt_pi = self._calc_derivs_pi(seq, avail, b, c, alpha)
                 derivatives[k] = np.append(derivatives[k], d_loglike_wrt_pi)
@@ -754,7 +753,7 @@ class GHMM:
                 derivatives[k] = np.append(derivatives[k], d_loglike_wrt_a)
             if wrt is None or 'tau' in wrt:
                 d_loglike_wrt_tau = self._calc_derivs_tau(seq, avail, b, c, alpha, g)
-                np.append(derivatives[k], d_loglike_wrt_tau)
+                derivatives[k] = np.append(derivatives[k], d_loglike_wrt_tau)
             if wrt is None or 'mu' in wrt:
                 d_loglike_wrt_mu = self._calc_derivs_mu(seq, avail, b, c, alpha, g)
                 derivatives[k] = np.append(derivatives[k], d_loglike_wrt_mu)
@@ -890,23 +889,13 @@ class GHMM:
         d_alphatilde_wrt_nu[0] = d_alpha0_wrt_nu
         d_c_wrt_nu = np.empty(T)
         for t in range(1, T):
-            #print("!!!")
-            #print(c)
-            #print(c[t-1])
-            #print(c[t-1] ** 2)
-            #print(np.sum(d_alphatilde_wrt_nu[t-1]))
             d_c_wrt_nu[t-1] = -(c[t-1] ** 2) * np.sum(d_alphatilde_wrt_nu[t-1])
-            #print(d_c_wrt_nu[t-1])
             alphatilde = alpha[t-1] / c[t-1]
-            #print(alphatilde)
             d_alpha_wrt_nu = d_c_wrt_nu[t-1] * alphatilde + d_alphatilde_wrt_nu[t-1] * c[t-1]
-            #print(d_alpha_wrt_nu)
             d_alphatilde_wrt_nu[t] = np.sum(d_alpha_wrt_nu * a_T +
                                      alpha[t-1] * d_a_wrt_nu_T, axis=1) * b[t] + \
                                      np.sum(alpha[t-1] * a_T, axis=1) * d_b_wrt_nu[t]
-            #print(d_alphatilde_wrt_nu[t])
         d_c_wrt_nu[-1] = -(c[-1] ** 2) * np.sum(d_alphatilde_wrt_nu[-1])
-        #print(d_c_wrt_nu)
         return -np.sum(d_c_wrt_nu / c)
 
 
