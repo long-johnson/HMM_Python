@@ -14,31 +14,19 @@ import sklearn.cross_validation
 import sklearn.grid_search
 import sklearn.preprocessing
 import os
+from itertools import product
 from research import make_missing_values
 from research import gen_gaps_positions
 from research import evaluate_classification
 from research import evaluate_decoding_imputation
 from research import make_svm_training_seqs
 import HMM
-
-def get_var_name(var, used_names, var_list):
-    all_variables = globals()
-    for key in all_variables:
-        if all_variables[key] is var and key not in used_names:
-            return key
-            
-def save_vars_to_file(f, var_list):
-    used_names = []
-    for var in var_list:
-        name = get_var_name(var, used_names, var_list)
-        used_names.append(name)
-        f.write("{} = {}\n".format(name, var))
-
+        
 #
 # Experiment parameters
 #
 # experiment settings
-n_of_launches = 50
+n_of_launches = 1
 is_verbose = False
 # derivatives calculation settings
 wrt = ['a']
@@ -53,17 +41,17 @@ is_class_gaps_places_different = True
 seed_gen_train_gaps = 222
 # hmm training settings
 rtol = 1e-5
-max_iter = 1000
+max_iter = 1
 hmms0_size = 2
 seed_training = 565
 # sequence generation seeds
 seed_gen_train_seqs = 565
 # size of training and classification samples
 T = 100
-K = 100
+K = 1
 # size of sequences to calc symmetric distances between hmms
 T_dist = 500
-K_dist = 100
+K_dist = 1
 # standard imputation settings
 n_neighbours = 10
 # SVM hyperparams validation settings
@@ -72,7 +60,7 @@ class pow_ten_uniform():
         self.gen = sp_uniform(a, b)
     def rvs(self):
         return 10.0 ** self.gen.rvs()
-n_trials_svm_random_search = 1000   # randomized trials of SVM hypermarameters
+n_trials_svm_random_search = 1   # randomized trials of SVM hypermarameters
 cv_n_folds = 4
 kernels=['poly', 'rbf']
 C_range = (-3., 10.)
@@ -234,19 +222,40 @@ print("---Elapsed: {} ---".format((datetime.datetime.now() - start_time) / 60))
 #
 # Save experiment params to file
 #
+def save_vars_to_file2(f, names, vals):
+    for name, val in zip(names, vals):
+        f.write("{} = {}\n".format(name, val))
 str_cur_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 out_dir = "out/research_ghmm_class_decode_imp_{}/".format(str_cur_time)
 os.mkdir(out_dir)
 f = open(out_dir+"experiment_params.txt", "w")
-save_vars_to_file(f, [n_of_launches, wrt, n_of_gaps_train_svm, class_gaps_range,
-                      is_train_gaps_places_different, is_class_gaps_places_different,
-                      seed_gen_train_gaps, rtol, max_iter, hmms0_size, seed_training,
-                      seed_gen_train_seqs, T, K, T_dist, K_dist, n_neighbours, n_trials_svm_random_search,
-                      cv_n_folds, kernels, C_range, gamma_range, coef0_range, degree_range,
-                      cv_random_state, dA, sig_val, hmm1_orig, hmm2_orig,
-                      hmm1, hmm2, iter1, iter2, n_of_best1, n_of_best2,
-                      distance_bw_hmm1_hmm2])
-f.write("clf.estimator = {}\n".format(clf.best_estimator_))
+#save_vars_to_file(f, [n_of_launches, wrt, n_of_gaps_train_svm, class_gaps_range,
+#                      is_train_gaps_places_different, is_class_gaps_places_different,
+#                      seed_gen_train_gaps, rtol, max_iter, hmms0_size, seed_training,
+#                      seed_gen_train_seqs, T, K, T_dist, K_dist, n_neighbours, n_trials_svm_random_search,
+#                      cv_n_folds, kernels, C_range, gamma_range, coef0_range, degree_range,
+#                      cv_random_state, dA, sig_val, hmm1_orig, hmm2_orig,
+#                      hmm1, hmm2, iter1, iter2, n_of_best1, n_of_best2,
+#                      distance_bw_hmm1_hmm2])
+save_vars_to_file2(
+    f,
+    ["n_of_gaps_train_hmm", "n_of_launches", "wrt", "n_of_gaps_train_svm", "class_gaps_range",
+     "is_train_gaps_places_different", "is_class_gaps_places_different",
+     "seed_gen_train_gaps", "rtol", "max_iter", "hmms0_size", "seed_training",
+     "seed_gen_train_seqs", "T", "K", "T_dist", "K_dist", "n_neighbours", "n_trials_svm_random_search",
+     "cv_n_folds", "kernels", "C_range", "gamma_range", "coef0_range", "degree_range",
+     "cv_random_state", "dA", "sig_val", "hmm1_orig", "hmm2_orig",
+     "hmm1", "hmm2", "iter1", "iter2", "n_of_best1", "n_of_best2",
+     "distance_bw_hmm1_hmm2"],
+    [n_of_gaps_train_hmm, n_of_launches, wrt, n_of_gaps_train_svm, class_gaps_range,
+     is_train_gaps_places_different, is_class_gaps_places_different,
+     seed_gen_train_gaps, rtol, max_iter, hmms0_size, seed_training,
+     seed_gen_train_seqs, T, K, T_dist, K_dist, n_neighbours, n_trials_svm_random_search,
+     cv_n_folds, kernels, C_range, gamma_range, coef0_range, degree_range,
+     cv_random_state, dA, sig_val, hmm1_orig, hmm2_orig,
+     hmm1, hmm2, iter1, iter2, n_of_best1, n_of_best2,
+     distance_bw_hmm1_hmm2]
+)
 f.close()
 
 
@@ -439,11 +448,9 @@ mpl.rc('font', size=12)
 # plt.figure(figsize=(1920/96, 1000/96), dpi=96)
 
 plt.figure(1)
-suptitle = u"Исследование алгоритмов классификации последовательностей с пропусками "\
-           u"Число скрытых состояний N = {}, число символов M = {}, \n"\
-           u"число/длина обучающих последовательностей K = {}/T={},"\
-           u"число запусков эксперимента n_of_launches = {}, # пропусков в обучающих СММ={}\n"\
-           u"# пропусков в обучающих SVM={}\n"\
+suptitle = u"Класс. неполн. послед."\
+           u"число/длина обучающих посл-тей K={}/T={},"\
+           u"# запусков = {}\n# пропусков в обучающих СММ/SVM={}/{}"\
            .format(N, M, K, T, n_of_launches, n_of_gaps_train_hmm, n_of_gaps_train_svm)
 plt.suptitle(suptitle)
 plt.ylabel(u"Верно распознанные, %")
