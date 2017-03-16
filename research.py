@@ -61,6 +61,19 @@ def gen_gaps_positions(K, T, is_gaps_places_different):
     return to_dissapears
 
 
+def make_svm_training_seqs(seqs_orig, to_dissapears, range_of_gaps):
+    train_seqs = []
+    train_avails = []
+    for n_of_gaps in range_of_gaps:
+        seqs, avails = make_missing_values(
+                           seqs_orig, to_dissapears,
+                           n_of_gaps
+                       )
+        train_seqs += seqs
+        train_avails += avails
+    return train_seqs, train_avails  
+
+
 def evaluate_classification(class_percent, step, hmms,
                             seqs1, seqs2, avails1=None, avails2=None,
                             algorithm_class='mlc',
@@ -75,8 +88,9 @@ def evaluate_classification(class_percent, step, hmms,
     clf and scaler work only with 'svm' algorithm
     'viterbi_advanced1' and 'viterbi_advanced2'
     """
-    print("algorithm_class = {}, algorithm_gaps = {}".format(algorithm_class,
-                                                             algorithm_gaps))
+    if verbose == True:
+        print("algorithm_class = {}, algorithm_gaps = {}"\
+              .format(algorithm_class, algorithm_gaps))
     K = len(seqs1)
     if algorithm_class == 'mlc':
         pred1 = ghmm.classify_seqs_mlc(seqs1, hmms, avails=avails1,
@@ -91,7 +105,8 @@ def evaluate_classification(class_percent, step, hmms,
     percent = (np.count_nonzero(pred1 == 0) +
                np.count_nonzero(pred2 == 1)) / (2.0*K) * 100.0
     class_percent[step] += percent
-    print("Correctly classified {} %".format(percent))
+    if verbose == True:
+        print("Correctly classified {} %".format(percent))
 
 
 # TODO: make full support of DHMM evaluation !!!

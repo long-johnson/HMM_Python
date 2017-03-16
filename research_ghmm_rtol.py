@@ -14,16 +14,18 @@ print ("Starting convergence experiment...")
 start_time = time.time()
 
 #
-# rtol=1e-3 is ideal for dA=0.0
-# rtol=1e-4 is ideal for dA=0.1
-# rtol=1e-5 is ideal for dA=0.2
+# rtol=1e-3 is ideal for dA=0.0, sigval=0.1
+# rtol=1e-4 is ideal for dA=0.1, sigval=0.1
+# rtol=1e-5 is ideal for dA=0.2, sigval=0.1
 #
+# rtol=1e-5 (или больше) for dA=0.1, sigval=0.2
+# rtol=1e-6 (или больше) for dA=0.1, sigval=0.4
 
 #
 # research params
 #
-dA = 0.1
-sig_val = 0.1
+dA = 0.0
+sig_val = 1.0
 n_of_launches = 1
 K = 100
 T = 100
@@ -32,7 +34,7 @@ K_for_dist = 100
 hmms0_size = 5
 max_iter = 10000
 is_using_true_hmm_for_hmms0 = False
-rtol_range = np.array([1e-1**i for i in range(1,6)])
+rtol_range = np.array([1e-1**i for i in range(1, 8)])
 is_gaps_places_different = True
 n_of_gaps = int(T * 0)
 algorithm = 'marginalization'
@@ -41,28 +43,6 @@ algorithm = 'marginalization'
 #
 # true HMM parameters
 #
-# multidimensional with mixtures
-#pi = np.array([0.3, 0.4, 0.3])
-#a = np.array([[0.1, 0.7, 0.2],
-#              [0.2, 0.2, 0.6],
-#              [0.8, 0.1, 0.1]])
-#tau = np.array([[0.3, 0.4, 0.3],
-#                [0.3, 0.4, 0.3],
-#                [0.3, 0.4, 0.3]])
-#mu = np.array([
-#              [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]],
-#              [[3.0, 3.0], [4.0, 4.0], [5.0, 5.0]],
-#              [[6.0, 6.0], [7.0, 7.0], [8.0, 8.0]],
-#              ])
-#Z = (mu[0,0]).size
-#N, M = tau.shape
-#sig = np.empty((N,M,Z,Z))
-#for n in range(N):
-#    for m in range(M):
-#        sig[n,m,:,:] = np.eye(Z) * sig_val
-#hmm = ghmm.GHMM(N, M, Z, mu, sig, pi=pi, a=a, tau=tau)
-
-
 pi = np.array([0.3, 0.4, 0.3])
 a = np.array([[0.1+dA, 0.7-dA, 0.2],
               [0.2, 0.2+dA, 0.6-dA],
@@ -179,7 +159,7 @@ for n_of_launch in range(n_of_launches):
         # print (str(hmm_trained))
         print("iter_best = {}".format(iter_best))
         print("n_of_best = {}".format(n_of_best))
-        print(("--- %.1f minutes ---".format((time.time()-start_time) / 60)))
+        print(("--- {:.1f} minutes ---".format((time.time()-start_time) / 60)))
         
         print
         step += 1
@@ -215,10 +195,10 @@ suptitle = u"Исследование сходимости алгоритма Б
            u"число обучающих последовательностей K = {}, "\
            u"максимальная длина обучающих последовательностей Tmax = {}, \n"\
            u"число начальных приближений = {}, "\
-           u"число запусков эксперимента n_of_launches = {} \n"\
+           u"число запусков эксперимента n_of_launches = {}, dA={}, sig_val={}\n"\
            u"в качестве начального приближения взята истинная модель = {}, "\
            u"число пропусков={}, алгоритм={}" \
-           .format(N, M, Z, K, T, hmms0_size, n_of_launches,
+           .format(N, M, Z, K, T, hmms0_size, n_of_launches, dA, sig_val,
                    is_using_true_hmm_for_hmms0, n_of_gaps, algorithm)
 xlabel = u"Число итераций"
 
@@ -277,7 +257,7 @@ plt.gca().xaxis.grid(True)
 
 plt.show()
 
-filename = "out/ghmm_research_convergence_N={}_M={}_Z={}_K={}_T={}_hmms0_size={}_launches={}"\
+filename = "out/ghmm_research_convergence_N={}_M={}_Z={}_K={}_T={}_hmms0_size={}_launches={}_"\
            "truehmm0={}_nofgaps={}_alg={}"\
             .format(N, M, Z, K, T, hmms0_size, n_of_launches, 
                     is_using_true_hmm_for_hmms0, n_of_gaps, algorithm)

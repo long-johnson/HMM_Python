@@ -10,6 +10,8 @@ import winsound
 import GaussianHMM as ghmm
 from research import make_missing_values
 from research import gen_gaps_positions
+from research import make_svm_training_seqs
+import HMM
 
 # validation settings
 number_of_trials = 100000   # randomized trials of SVM hypermarameters
@@ -18,13 +20,12 @@ C_range = (-3., 10.)
 gamma_range = (-11., 3.)
 coef0_range = (-100.0, 100.0)
 degree_range = (2, 6)
-seed_search = 1
 # derivatives calculation settings
 wrt = ['a']
 # missing data settings
-n_of_gaps_class = (0, 91)
 n_of_gaps_train_hmm = 0
-n_of_gaps_train_svm = (0, 91)
+n_of_gaps_train_svm = (n_of_gaps_train_hmm, 91)
+n_of_gaps_class = (n_of_gaps_train_hmm, 91)
 is_gaps_places_different = True
 seed_gen_train_gaps = 222
 seed_gen_class_gaps = 2
@@ -33,7 +34,7 @@ rtol = 1e-4
 max_iter = 10000
 hmms0_size = 5
 seed_training = 565
-# sequence generation
+# sequence generation seeds
 seed_gen_train_seqs = 565
 seed_gen_class_seqs = 777
 # size of training and classification samples
@@ -136,19 +137,31 @@ hmm2, _, iter2, n_of_best2 = ghmm.train_best_hmm_baumwelch(
                                  train_hmm_avails2, rtol, max_iter
                              )
 print("training completed, iter={}/{}\nhmm1={}\nhmm2={}".format(iter1, iter2, hmm1, hmm2))
+distance = HMM.calc_symmetric_distance(hmm1, hmm2, 100, 200)
+print("distance between hmms = {}".format(distance))
+winsound.Beep(1500, 500)
 
 #
 # generate gaps posititons in SVM training sequences
 #
 np.random.seed(seed_gen_train_gaps)
 train_svm_to_dissapears1 = train_hmm_to_dissapears1
-train_svm_to_dissapears2 = train_hmm_to_dissapears1
-train_svm_seqs1, train_svm_avails1 = make_missing_values(train_seqs_orig1,
-                                                         train_svm_to_dissapears1,
-                                                         n_of_gaps_train_svm)
-train_svm_seqs2, train_svm_avails2 = make_missing_values(train_seqs_orig2,
-                                                         train_svm_to_dissapears2,
-                                                         n_of_gaps_train_svm)
+train_svm_to_dissapears2 = train_hmm_to_dissapears2
+#train_svm_seqs1, train_svm_avails1 = make_missing_values(train_seqs_orig1,
+#                                                         train_svm_to_dissapears1,
+#                                                         n_of_gaps_train_svm)
+#train_svm_seqs2, train_svm_avails2 = make_missing_values(train_seqs_orig2,
+#                                                         train_svm_to_dissapears2,
+#                                                         n_of_gaps_train_svm)
+train_svm_seqs1, train_svm_avails1 = make_svm_training_seqs(train_seqs_orig1,
+                                                            train_svm_to_dissapears1,
+                                                            range(0, 100, 10))
+train_svm_seqs2, train_svm_avails2 = make_svm_training_seqs(train_seqs_orig2,
+                                                            train_svm_to_dissapears2,
+                                                            range(0, 100, 10))
+        
+        
+        
 
 #
 # Precalculate derivatives of training and classification data
@@ -188,11 +201,11 @@ for kernel, C, gamma, coef0, degree in SVM_params_generator(
                                            kernels,
                                            C_range, gamma_range,
                                            coef0_range, degree_range,
-                                           seed_search
+                                           seed=1
                                        ):
     svm_params = svm.SVC(C=C, kernel=kernel, degree=degree,
                          gamma=gamma, coef0=coef0, cache_size=500,
-                         max_iter=1000000)
+                         max_iter=10000)
     clf, scaler = ghmm.train_svm_classifier([hmm1, hmm2],
                                             [train_svm_seqs1, train_svm_seqs2],
                                             svm_params,
@@ -217,16 +230,15 @@ array_cv_grid_poly = np.array(cv_grid)
 array_cv_grid_poly = array_cv_grid_poly[array_cv_grid_poly[:, 5].argsort()]
 print(array_cv_grid_poly[-5:])
 print("{:.0f} s passed".format(time.time() - start))
-print("best cv params:")
-print(kernels[int(array_cv_grid_poly[-1, 0])])
-for elem in array_cv_grid_poly[-1, 1:]:
-    print(elem)
+print()
+print("best percent")
+print(array_cv_grid_poly[-1, 5])
 a = array_cv_grid_poly[-1]
 print("copy/paste")
 print("C={}, kernel='{}', degree={},\ngamma={}, coef0={},"\
       .format(a[1], kernels[int(a[0])], int(a[4]), a[2], a[3]))
 print()
-
+winsound.Beep(1000, 1000)
 
 #
 # ML classification
@@ -307,5 +319,29 @@ gamma=3.619516310745099e-07, coef0=57.8647613117499,
 svm_params = svm.SVC(
 C=3457488.0477916673, kernel='rbf', degree=3,
 gamma=5.269878287581289e-08, coef0=-10.104309103960844,
+                     cache_size=500,
+                     max_iter=100000)
+
+# optimal params for trained hmms (25000 trials), dA=0.1, wrt='a', n_of_gaps_train_hmm = 10, 
+# n_of_gaps_train_svm = (10, 90), n_of_gaps_class=(10, 90), gmm init diag, 82.5%
+svm_params = svm.SVC(
+C=3.8882434315566554, kernel='poly', degree=5,
+gamma=2.827030299171524e-07, coef0=-20.931734991756116,
+                     cache_size=500,
+                     max_iter=100000)
+
+# optimal params for trained hmms (125000 trials), dA=0.1, wrt='a', n_of_gaps_train_hmm = 10, 
+# n_of_gaps_train_svm = (10, 90), n_of_gaps_class=(10, 90), gmm init diag, 83%
+svm_params = svm.SVC(
+C=229593457.69973943, kernel='poly', degree=3,
+gamma=3.741738964859175e-09, coef0=-63.183091664197754,
+                     cache_size=500,
+                     max_iter=100000)
+
+# optimal params for trained hmms (100000 trials), dA=0.1, wrt='a', n_of_gaps_train_hmm = 0, 
+# n_of_gaps_train_svm = make_svm_training_seqs(0, 90), n_of_gaps_class=(0, 90), gmm init diag, 80%
+svm_params = svm.SVC(
+C=52131480.46723968, kernel='poly', degree=5,
+gamma=5.745457655305097e-09, coef0=25.530080740735258,
                      cache_size=500,
                      max_iter=100000)
