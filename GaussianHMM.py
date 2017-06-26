@@ -18,6 +18,7 @@ class GHMM:
     """Implementation of Hidden Markov Model where observation density is
     represented by a mixture of normal distributions  
     Observations are vectors of real numbers
+    Refer to Rabiner's tutorial: http://ieeexplore.ieee.org/document/18626/
        
        Attributes
         ----------
@@ -412,7 +413,7 @@ class GHMM:
                 a_up += np.sum(xi, axis=0)
                 a_down += np.sum(gamma, axis=0)                
                 tau_up += np.sum(gamma_ms[k][avail_t], axis=0)
-                tau_down += np.sum(gamma[avail_t], axis=0)  
+                tau_down += np.sum(gamma[avail_t], axis=0)
                 mu_up += np.einsum('tnm,tz->nmz', gamma_ms[k][avail_t], seq[avail])
                 mu_sig_down += np.sum(gamma_ms[k][avail_t], axis=0)
                 avail[-1] = temp_avail_last  # to restore original value
@@ -438,10 +439,8 @@ class GHMM:
                                            #instead of np.outer()
             # sig re-estimation
             self._sig = sig_up / mu_sig_down[:,:,np.newaxis,np.newaxis]
-            #print "iter = {}\nhmm params = {}\n".format(iteration, str(self))
             # remove mixture components with singular covariance matrix and
             # states where all mixtures were removed, then readjust probabilities
-         
             self.normalize()
             iteration += 1
         likelihood = self.calc_loglikelihood(seqs, avails)
@@ -995,7 +994,7 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, avails=None, rtol=1e-1, 
 def _form_train_data_for_SVM(hmms, seqs_list, avails_list=None, wrt=None,
                              algorithm_gaps='marginalization', n_neighbours=10):
     """
-    wrt : list of strings {‘pi’, ‘a’, ‘tau’, ‘mu’, ‘sig’}
+    wrt : list of strings {'pi', 'a', 'tau', 'mu', 'sig'}
         with respect to which paramerers the derivatives should be taken
     """
     n_of_classes = len(hmms)
@@ -1196,7 +1195,7 @@ def estimate_mu_sig_gmm(seqs, N, M, avails=None, n_init=5,
             sig[i] = np.array(gmm.covars_)
         else:
             sig_tmp = np.array(gmm.covars_)
-            for m in range(N):
+            for m in range(M):
                 sig[i, m] = np.diag(sig_tmp[m])
     return mu, sig
 
@@ -1295,7 +1294,129 @@ def classify_seqs_mlc(seqs, hmms, avails=None, algorithm_gaps='marginalization',
         predictions.append(label_best)
     return np.array(predictions, dtype=np.int)
 
+
+def _create_block_diagonal_hmm(n_clusters, N, M, Z, mu_full, sig_full, seed=None):
+    """ set up an HMM with block diagonal transtition matrix
+    refer to http://www.datalab.uci.edu/papers/nips96.pdf, section 2
+    """
+    if seed is not None:
+        np.random.seed(seed)
+    blocks = []
+    for i in range(n_clusters):
+        if seed is None:
+            # add uniformly initialized transformation matrix
+            a = np.full((N, N), 1.0/N)
+        else:
+            # add randomly initialized transformation matrix
+            a = np.empty(shape=(N, N))
+            for i in range(N):
+                a[i, :] = _generate_discrete_distribution(N)
+        blocks.append(a)
+    # block-diagonal transformation matrix
+    a_full = sp.linalg.block_diag(*blocks)
+    return GHMM(n_clusters * N, M, Z, mu_full, sig_full, a=a_full, seed=seed)
+
+
+def cluster_sequences_derivatives(seqs, n_clusters, hmms0_size, N, M, 
+                                  rtol=1e-1, max_iter=None,
+                                  avails=None, algorithm='marginalization',
+                                  kmeans_n_init=10,
+                                  verbose=False, initial_guess='gmm',
+                                  covariance_type='diag', 
+                                  ):
+    """ Cluster sequences in space of first derivatives of likelihood function
+    with respect to parameters of HMMs fitted to each sequence
     
+    Parameters:
+    -----------
+    N : int
+        number of states in each HMM corresponding to one cluster
+    
+    Returns
+    -------
+    labels : int 1darray (K)
+        cluster label for each sequence
+    """
+    if avails is None:
+        avails = [np.full(len(seq), True, np.bool) for seq in seqs]
+    
+    Z =  len(seqs[0][0])
+    # number of states in full matrix
+    N_full = n_clusters * N
+     # estimate mu and sig from seqs
+    mu, sig = estimate_mu_sig_gmm(seqs, N, M, avails,
+                                  covariance_type=covariance_type)
+    mu_full = np.concatenate([mu for i in range(n_clusters)])
+    sig_full = np.concatenate([sig for i in range(n_clusters)])
+    # create a list of initial approximations of HMM params
+    # each approximation is HMM with a block-diagonal transition matrix
+    hmms0 = []
+    hmm0 = _create_block_diagonal_hmm(n_clusters, N, M, Z, mu_full, sig_full)
+    hmms0.append(hmm0)
+    for i in range(hmms0_size-1):
+        hmm0 = _create_block_diagonal_hmm(n_clusters, N, M, Z, mu_full, sig_full, seed=i)
+        hmms0.append(hmm0)
+    for i, hmm0 in enumerate(hmms0):
+        print("Initial approximation {}".format(i))
+        print(hmm0)
+        print()
+    # train composite HMM with block-diagonal transition matrix on the whole dataset
+    hmm_full, p_max, iter_best, n_of_best = \
+        train_best_hmm_baumwelch(
+            seqs, hmms0_size, N_full, M, Z, avails, rtol, max_iter, algorithm,
+            hmms0, verbose, initial_guess, covariance_type
+        )
+    print("Trained hmm_full")
+    print(hmm_full)
+    print("p_max, iter_best, n_of_best")
+    print(p_max, iter_best, n_of_best)
+    print()
+    
+    # extract sub-hmms from the block-diagonal full_hmm
+    pi_list = [hmm_full._pi[i*N:(i+1)*N] for i in range(n_clusters)]
+    a_list = [hmm_full._a[i*N:(i+1)*N, i*N:(i+1)*N] for i in range(n_clusters)]
+    tau_list = [hmm_full._tau[i*N:(i+1)*N] for i in range(n_clusters)]
+    mu_list = [hmm_full._mu[i*N:(i+1)*N] for i in range(n_clusters)]
+    sig_list = [hmm_full._sig[i*N:(i+1)*N] for i in range(n_clusters)]
+    hmms = [GHMM(N, M, Z, mu, sig, pi, a, tau)
+            for pi, a, tau, mu, sig in zip(pi_list, a_list, tau_list, mu_list, sig_list)]
+    # normalize pi-vector
+    for hmm in hmms:
+        hmm._pi /= np.sum(hmm._pi)
+    print("Standalone HMMs ")
+    for i, hmm in enumerate(hmms):
+        print("HMM {}".format(i))
+        print(hmm)
+    print()
+    # calc derivatives for each sequence for each hmm and make feature matrix X
+    print("Calculating derivatives")
+    X = _form_class_data_for_SVM(hmms, seqs, avails,
+                                 wrt=['pi', 'a', 'tau', 'mu', 'sig'], algorithm_gaps=algorithm)
+    print("X")
+    for row in X:
+        for col in row:
+            print("{} ".format(col), end='')
+        print()
+    print()
+    #X[np.isnan(X)] = 0.0
+    # TODO: hack!
+    X = sklearn.preprocessing.Imputer().fit_transform(X)
+    # scale the feature matrix
+    X = sklearn.preprocessing.StandardScaler().fit_transform(X)
+    # perform clustering using k-means algorithm
+    print("K-means clustering")
+    kmeans = sklearn.cluster.KMeans(n_clusters, n_init=kmeans_n_init)
+    labels = kmeans.fit_predict(X)
+    return labels
+        
+        
+def cluster_sequences_standard():
+    """ Refer to 3.1 in http://www.lx.it.pt/~mtf/MLDM_2003.pdf
+    """
+    pass
+        
+
+
 def estimate_hmm_params_by_seq_and_states(mu, sig, seqs, state_seqs):
     """ to check that sequences agrees with hmm produced it
     

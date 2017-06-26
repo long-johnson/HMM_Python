@@ -21,46 +21,54 @@ from research import evaluate_classification
 from research import evaluate_decoding_imputation
 from research import make_svm_training_seqs
 import HMM
+
+"""
+Comparing different sequence classification techniques
+"""
         
 #
 # Experiment parameters
 #
 # experiment settings
-n_of_launches = 1
+n_of_launches = 50
 is_verbose = False
 # derivatives calculation settings
-wrt = ['a']
+wrt = ['a', 'tau']
 # missing data settings
 #n_of_gaps_train_hmm = 90
+
 n_of_gaps_train_svm = "make_svm_training_seqs({},100,10)".format(n_of_gaps_train_hmm)
 #n_of_gaps_train_svm = n_of_gaps_train_hmm
 #n_of_gaps_train_svm = (n_of_gaps_train_hmm, 90)
-class_gaps_range = list(range(0, 100, 10))
+
+#class_gaps_range = list(range(0, 100, 10))
+class_gaps_range = [n_of_gaps_train_hmm]
+
 is_train_gaps_places_different = True
 is_class_gaps_places_different = True
 seed_gen_train_gaps = 222
 # hmm training settings
-rtol = 1e-5
-max_iter = 1
-hmms0_size = 2
+rtol = 1e-4
+max_iter = 1000
+hmms0_size = 5
 seed_training = 565
 # sequence generation seeds
 seed_gen_train_seqs = 565
 # size of training and classification samples
 T = 100
-K = 1
+K = 100
 # size of sequences to calc symmetric distances between hmms
 T_dist = 500
-K_dist = 1
+K_dist = 100
 # standard imputation settings
 n_neighbours = 10
 # SVM hyperparams validation settings
+n_trials_svm_random_search = 10000   # randomized trials of SVM hypermarameters
 class pow_ten_uniform():
     def __init__(self, a, b):
         self.gen = sp_uniform(a, b)
     def rvs(self):
         return 10.0 ** self.gen.rvs()
-n_trials_svm_random_search = 1   # randomized trials of SVM hypermarameters
 cv_n_folds = 4
 kernels=['poly', 'rbf']
 C_range = (-3., 10.)
@@ -72,8 +80,11 @@ param_distributions = {"C" : pow_ten_uniform(*C_range), "gamma" : pow_ten_unifor
                        "coef0" : sp_uniform(*coef0_range), "degree" : sp_randint(*degree_range),
                        "kernel" : ['poly', 'rbf']}
 # hmm parameters settings
-dA = 0.2
-sig_val = 1.0
+dA = 0.05
+dtau = 0.05
+dmu = 0.00
+dsig = 0.00
+sig_val = 0.1
 
 
 
@@ -106,20 +117,22 @@ pi = np.array([0.3, 0.4, 0.3])
 a = np.array([[0.1+dA, 0.7-dA, 0.2],
               [0.2, 0.2+dA, 0.6-dA],
               [0.8-dA, 0.1, 0.1+dA]])
-tau = np.array([[0.3, 0.4, 0.3],
-                [0.3, 0.4, 0.3],
-                [0.3, 0.4, 0.3]])
+tau = np.array([[0.3+dtau, 0.4-dtau, 0.3],
+                [0.3, 0.4+dtau, 0.3-dtau],
+                [0.3-dtau, 0.4, 0.3+dtau]])
 mu = np.array([
               [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]],
               [[3.0, 3.0], [4.0, 4.0], [5.0, 5.0]],
               [[6.0, 6.0], [7.0, 7.0], [8.0, 8.0]],
               ])
+mu[:, :, 0] -= dmu
+mu[:, :, 1] += dmu
 Z = (mu[0,0]).size
 N, M = tau.shape
 sig = np.empty((N,M,Z,Z))
 for n in range(N):
     for m in range(M):
-        sig[n,m,:,:] = np.eye(Z) * sig_val
+        sig[n,m,:,:] = np.eye(Z) * (sig_val + dsig)
 hmm2_orig = ghmm.GHMM(N, M, Z, mu, sig, pi=pi, a=a, tau=tau)
 
 
@@ -165,6 +178,17 @@ if is_verbose:
 distance_bw_hmm1_hmm2 = HMM.calc_symmetric_distance(hmm1, hmm2, T_dist, K_dist)
 print("distance between hmms = {}".format(distance_bw_hmm1_hmm2))
 print("---Elapsed: {} ---".format((datetime.datetime.now() - start_time) / 60))
+
+#
+# estimate the best possible accuracy
+#
+seqs_class1, _ = hmm1.generate_sequences(K, T, seed=seed_gen_train_seqs+1)
+seqs_class2, _ = hmm2.generate_sequences(K, T, seed=seed_gen_train_seqs+1)
+pred1 = ghmm.classify_seqs_mlc(seqs_class1, [hmm1, hmm2])
+pred2 = ghmm.classify_seqs_mlc(seqs_class2, [hmm1, hmm2])
+percent = (np.count_nonzero(pred1 == 0) + np.count_nonzero(pred2 == 1)) / (2.0*K) * 100.0
+print("Best accuracy is {} %".format(percent))
+print()
 
 #
 # Prepare training sequences for SVM classifier
@@ -229,30 +253,26 @@ str_cur_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 out_dir = "out/research_ghmm_class_decode_imp_{}/".format(str_cur_time)
 os.mkdir(out_dir)
 f = open(out_dir+"experiment_params.txt", "w")
-#save_vars_to_file(f, [n_of_launches, wrt, n_of_gaps_train_svm, class_gaps_range,
-#                      is_train_gaps_places_different, is_class_gaps_places_different,
-#                      seed_gen_train_gaps, rtol, max_iter, hmms0_size, seed_training,
-#                      seed_gen_train_seqs, T, K, T_dist, K_dist, n_neighbours, n_trials_svm_random_search,
-#                      cv_n_folds, kernels, C_range, gamma_range, coef0_range, degree_range,
-#                      cv_random_state, dA, sig_val, hmm1_orig, hmm2_orig,
-#                      hmm1, hmm2, iter1, iter2, n_of_best1, n_of_best2,
-#                      distance_bw_hmm1_hmm2])
 save_vars_to_file2(
     f,
-    ["n_of_gaps_train_hmm", "n_of_launches", "wrt", "n_of_gaps_train_svm", "class_gaps_range",
+    ["n_of_gaps_train_hmm", "n_of_launches", "wrt", "dA", "dtau", "dmu", "dsig", "sig_val",
+    "n_of_gaps_train_svm", "class_gaps_range",
      "is_train_gaps_places_different", "is_class_gaps_places_different",
      "seed_gen_train_gaps", "rtol", "max_iter", "hmms0_size", "seed_training",
      "seed_gen_train_seqs", "T", "K", "T_dist", "K_dist", "n_neighbours", "n_trials_svm_random_search",
      "cv_n_folds", "kernels", "C_range", "gamma_range", "coef0_range", "degree_range",
-     "cv_random_state", "dA", "sig_val", "hmm1_orig", "hmm2_orig",
+     "cv_random_state", "clf.best_score_",
+     "hmm1_orig", "hmm2_orig",
      "hmm1", "hmm2", "iter1", "iter2", "n_of_best1", "n_of_best2",
      "distance_bw_hmm1_hmm2"],
-    [n_of_gaps_train_hmm, n_of_launches, wrt, n_of_gaps_train_svm, class_gaps_range,
+    [n_of_gaps_train_hmm, n_of_launches, wrt, dA, dtau, dmu, dsig, sig_val,
+     n_of_gaps_train_svm, class_gaps_range,
      is_train_gaps_places_different, is_class_gaps_places_different,
      seed_gen_train_gaps, rtol, max_iter, hmms0_size, seed_training,
      seed_gen_train_seqs, T, K, T_dist, K_dist, n_neighbours, n_trials_svm_random_search,
      cv_n_folds, kernels, C_range, gamma_range, coef0_range, degree_range,
-     cv_random_state, dA, sig_val, hmm1_orig, hmm2_orig,
+     cv_random_state, clf.best_score_,
+     hmm1_orig, hmm2_orig,
      hmm1, hmm2, iter1, iter2, n_of_best1, n_of_best2,
      distance_bw_hmm1_hmm2]
 )
@@ -451,7 +471,7 @@ plt.figure(1)
 suptitle = u"Класс. неполн. послед."\
            u"число/длина обучающих посл-тей K={}/T={},"\
            u"# запусков = {}\n# пропусков в обучающих СММ/SVM={}/{}"\
-           .format(N, M, K, T, n_of_launches, n_of_gaps_train_hmm, n_of_gaps_train_svm)
+           .format(K, T, n_of_launches, n_of_gaps_train_hmm, n_of_gaps_train_svm)
 plt.suptitle(suptitle)
 plt.ylabel(u"Верно распознанные, %")
 plt.xlabel(u"Процент пропусков")

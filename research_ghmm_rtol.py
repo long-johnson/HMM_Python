@@ -24,8 +24,7 @@ start_time = time.time()
 #
 # research params
 #
-dA = 0.0
-sig_val = 1.0
+
 n_of_launches = 1
 K = 100
 T = 100
@@ -39,6 +38,11 @@ is_gaps_places_different = True
 n_of_gaps = int(T * 0)
 algorithm = 'marginalization'
 #algorithm = 'viterbi'
+dA = 0.0
+dtau = 0.1
+dmu = 0.1
+dsig = 0.1
+sig_val = 0.1
 
 #
 # true HMM parameters
@@ -47,20 +51,22 @@ pi = np.array([0.3, 0.4, 0.3])
 a = np.array([[0.1+dA, 0.7-dA, 0.2],
               [0.2, 0.2+dA, 0.6-dA],
               [0.8-dA, 0.1, 0.1+dA]])
-tau = np.array([[0.3, 0.4, 0.3],
-                [0.3, 0.4, 0.3],
-                [0.3, 0.4, 0.3]])
+tau = np.array([[0.3+dtau, 0.4-dtau, 0.3],
+                [0.3, 0.4+dtau, 0.3-dtau],
+                [0.3-dtau, 0.4, 0.3+dtau]])
 mu = np.array([
               [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]],
               [[3.0, 3.0], [4.0, 4.0], [5.0, 5.0]],
               [[6.0, 6.0], [7.0, 7.0], [8.0, 8.0]],
               ])
+mu[:, :, 0] -= dmu
+mu[:, :, 1] += dmu
 Z = (mu[0,0]).size
 N, M = tau.shape
 sig = np.empty((N,M,Z,Z))
 for n in range(N):
     for m in range(M):
-        sig[n,m,:,:] = np.eye(Z) * sig_val
+        sig[n,m,:,:] = np.eye(Z) * (sig_val + dsig)
 hmm = ghmm.GHMM(N, M, Z, mu, sig, pi=pi, a=a, tau=tau)
 
 # is_using_true_hmm_for_hmms0
