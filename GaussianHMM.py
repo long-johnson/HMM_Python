@@ -11,59 +11,56 @@ from itertools import product
 import StandardImputationMethods as imp
 
 
-# global parameter
-is_cov_diagonal = False
-
 class GHMM:
     """Implementation of Hidden Markov Model where observation density is
-    represented by a mixture of normal distributions  
+    represented by a mixture of normal distributions
     Observations are vectors of real numbers
     Refer to Rabiner's tutorial: http://ieeexplore.ieee.org/document/18626/
-       
+
        Attributes
         ----------
         N : integer
             number of hidden states
-        M : integer 
+        M : integer
             number of distribution mixture components
-        Z : integer 
+        Z : integer
             dimension of observations
         pi : integer 1darray (N)
             initial state distribution vector
         a : 2darray (NxN)
-            transition probabilities matrix 
+            transition probabilities matrix
         tau : 2darray (NxM)
-            weights of mixture distributions 
+            weights of mixture distributions
         mu : 3darray (NxMxZ)
             means of normal distributions
-        sig : 4darray (NxMxZ)
-            covariation matrix of normal distributions
+        sig : 4darray (NxMxZ or NxMxZxZ)
+            covariation matrixes of normal distributions
     """
-    
+
     def __init__(self, n, m, z, mu, sig, pi=None, a=None, tau=None, seed=None):
-        """ 
-        
+        """
+
         Parameters
         ----------
         n : integer
             number of hidden states
-        m : integer 
+        m : integer
             number of distribution mixture components
-        z : integer 
+        z : integer
             dimension of observations
         pi : integer 1darray (N)
             initial state distribution vector
         a : 2darray (NxN)
-            transition probabilities matrix 
+            transition probabilities matrix
         tau : 2darray (NxM)
-            weights of mixture distributions 
+            weights of mixture distributions
         mu : 3darray (NxMxZ)
             means of normal distributions
-        sig : 4darray (NxMxZ)
+        sig : 4darray (NxMxZ or NxMxZxZ)
             covariation matrix of normal distributions
         """
         if seed is not None:
-            np.random.seed(seed)  
+            np.random.seed(seed)
         self._n = n
         self._m = m
         self._z = z
@@ -85,7 +82,7 @@ class GHMM:
         else:
             self._a = np.empty(shape=(n, n))
             for i in range(n):
-                self._a[i, :] = _generate_discrete_distribution(n)      
+                self._a[i, :] = _generate_discrete_distribution(n)
         # mixture weights
         if tau is not None:
             self._tau = np.array(tau)
@@ -98,18 +95,21 @@ class GHMM:
         # TODO: add random generation of mu and sig
         self._mu = np.array(mu)
         self._sig = np.array(sig)
-        
+
     def __str__(self):
         return "pi\n{}\n".format(self._pi) + \
                "a\n{}\n".format(self._a) + \
                "tau\n{}\n".format(self._tau) + \
                "mu\n{}\n".format(self._mu) + \
-               "sig\n{}\n".format(self._sig)
-        
+               "sig\n{}".format(self._sig)
+
+    def _is_cov_diag(self):
+        return len(self._sig.shape) == 3
+
     def generate_sequences(self, K, T, seed=None):
         """
         Generate sequences of observations produced by this model
-        
+
         Parameters
         ----------
         K : int
@@ -118,7 +118,7 @@ class GHMM:
             Length of each sequence
         seed : int, optional
             Seed for random generator
-            
+
         Returns
         -------
         seqs : list of 1darrays
@@ -129,7 +129,7 @@ class GHMM:
         # preparation
         # randomize with accordance to seed
         if seed is not None:
-            np.random.seed(seed) 
+            np.random.seed(seed)
         # prepare list for sequences
         seqs = [np.empty((T,self._z),dtype=np.float64) for k in range(K)]
         state_seqs = [np.empty(T, dtype=np.int32) for k in range(K)]
@@ -138,7 +138,8 @@ class GHMM:
             state = _get_sample_discrete_distr(self._pi)
             state_seqs[k][0] = state
             mix_elem = _get_sample_discrete_distr(self._tau[state,:])
-            cov_matrix = self._sig[state, mix_elem]
+            cov_matrix = self._sig[state, mix_elem] if not self._is_cov_diag() \
+                         else np.diag(self._sig[state, mix_elem])
             seqs[k][0] = \
                 np.random.multivariate_normal(self._mu[state, mix_elem],
                                               cov_matrix)
@@ -146,16 +147,17 @@ class GHMM:
                 state = _get_sample_discrete_distr(self._a[state,:])
                 state_seqs[k][t] = state
                 mix_elem = _get_sample_discrete_distr(self._tau[state,:])
-                cov_matrix = self._sig[state, mix_elem]
+                cov_matrix = self._sig[state, mix_elem] if not self._is_cov_diag() \
+                             else np.diag(self._sig[state, mix_elem])
                 seqs[k][t] = \
                     np.random.multivariate_normal(self._mu[state, mix_elem],
                                                   cov_matrix)
         return seqs, state_seqs
-    
+
     def calc_loglikelihood(self, seqs, avails=None):
         """
         Calc likelihood of the sequences being generated by the current HMM
-        
+
         Parameters
         ----------
         seqs : list of 2darrays (T x Z)
@@ -163,7 +165,7 @@ class GHMM:
         avails : list of boolean 1darrays (T), optional
             indicate whether element of sequence is not missing,
             i.e. True - not missing, False - is missing
-            
+
         Returns
         -------
         likelihood : float64
@@ -177,19 +179,19 @@ class GHMM:
             b, _ = self._calc_b(seq, avail)
             likelihood += self._calc_forward_scaled(b)[0]
         return likelihood
-   
+
     def _calc_b(self, seq, avail):
         """
         Calc conditional densities of each sequence element given each HMM state
-        
+
         Parameters
         ----------
         seq : 2darray (T x Z)
-            observations sequence 
+            observations sequence
         avail : boolean 1darray (T)
             indicate whether element of sequence is not missing,
             i.e. True - not missing, False - is missing
-        
+
         Returns
         -------
         b : 2darray (T x N)
@@ -206,14 +208,15 @@ class GHMM:
         sig = self._sig
         tau = self._tau
         g = np.empty((T, N, M))
-        global is_cov_diagonal
+        is_cov_diagonal = self._is_cov_diag()
         for t in range(T):
             if avail[t]:
                 for i in range(N):
                     for m in range(M):
                         if (tau[i,m] != 0.0):
-                            temp = _my_multivariate_normal_pdf(seq[t], mu[i,m], sig[i,m], 
+                            temp = _my_multivariate_normal_pdf(seq[t], mu[i,m], sig[i,m],
                                                                cov_is_diagonal = is_cov_diagonal)
+#                            print('gauss_prob ', temp)
                             if temp == 0.0:
                                 temp = 1.0e-200 # to prevent underflow
                             g[t, i, m] = temp
@@ -222,17 +225,19 @@ class GHMM:
             else:
                 g[t,:,:] = 1.0
         b = np.sum(tau * g, axis=2)
+#        print('b', b)
+#        print()
         return b, g
-    
+
     def _calc_forward_scaled(self, b):
         """
         Calc scaled forward variables
-        
+
         Parameters
         ----------
         b : 2darray (T x N)
             conditional densities for each sequence element and HMM state
-        
+
         Returns
         ----------
         likelihood : float64
@@ -243,7 +248,7 @@ class GHMM:
             scale coefficients
         """
         N = self._n
-        T = b.shape[0]       
+        T = b.shape[0]
         pi = self._pi
         # memory
         alpha = np.empty(shape=(T, N))
@@ -251,35 +256,35 @@ class GHMM:
         # initialization
         alpha_t = pi * b[0]
         c[0] = 1.0 / np.sum(alpha_t)
-        alpha[0,:] = c[0] * alpha_t 
+        alpha[0, :] = c[0] * alpha_t
         # induction
         a_T = np.transpose(self._a)
         for t in range(T-1):
-            alpha_t = b[t+1,:] * np.sum(alpha[t,:]*a_T, axis=1)
+            alpha_t = b[t+1,:] * np.sum(alpha[t,:] * a_T, axis=1)
             c[t+1] = 1.0 / np.sum(alpha_t)
-            alpha[t+1,:] = c[t+1] * alpha_t
+            alpha[t+1, :] = c[t+1] * alpha_t
         # termination:
         loglikelihood = -np.sum(np.log(c))
         return loglikelihood, alpha, c
-    
+
     def _calc_backward_scaled(self, b, c):
         """
         Calc scaled backward variables
-        
+
         Parameters
         ----------
         b : 2darray (T x N)
             conditional densities for each sequence element and HMM state
         c : 2darray (T)
             scaling coefficients
-        
+
         Returns
         ----------
         beta : 2darray (T x N)
             scaled backward variables
         """
         N = self._n
-        T = b.shape[0]       
+        T = b.shape[0]
         a = self._a
         # memory
         beta = np.empty(shape=(T, N))
@@ -291,13 +296,13 @@ class GHMM:
             beta_t = np.sum(a * b[t+1,:]  * beta[t+1,:], axis=1)
             beta[t,:] = c[t] * beta_t
         return beta
-        
+
     def _calc_xi_gamma_scaled(self, b, alpha, beta):
         """ Calc xi(t,i,j), t=1..T, i,j=1..N - array of probabilities of
         being in state i and go to state j in time t given the model and seq
         Calc gamma(t,i), t=1..T, i=1..N -- array of probabilities of
         being in state i at the time t given the model and sequence
-        
+
         Parameters
         ----------
         b : 2darray (T x N)
@@ -306,7 +311,7 @@ class GHMM:
             forward variables
         beta : 2darray (TxN)
             backward variables
-            
+
         Returns
         -------
         xi : 3darray (TxNxN)
@@ -318,15 +323,15 @@ class GHMM:
         N = self._n
         xi = np.empty(shape=(T-1, N, N))
         a_tr = np.transpose(self._a)
-        for t in range(T-1):           
+        for t in range(T-1):
             xi[t,:,:] = (alpha[t,:] * a_tr).T * b[t+1,:] * beta[t+1,:]
         gamma = np.sum(xi, axis=2)
         return xi, gamma
-     
+
     def _calc_gamma_m_scaled(self, b, g, gamma):
         """ Calc gamma_m(t,i,m), t=1..T, i=1..N, m=1..M -- array of probs
         of being in state i at time t and selecting m-th mixture component
-        
+
         Parameters
         ----------
         b : 2darray (T x N)
@@ -335,7 +340,7 @@ class GHMM:
             pdf (Gaussian distribution) values for each sequence element
         gamma : 2darray (TxN)
             probs of transition from i at time t given the model and seq
-            
+
         Returns
         -------
         gamma_m : 3darray (TxNxM)
@@ -343,17 +348,17 @@ class GHMM:
         """
         N = self._n
         M = self._m
-        T = b.shape[0]       
+        T = b.shape[0]
         tau = self._tau
         gamma_m = np.empty(shape=(T-1, N, M))
         gamma_m = g[:-1,:,:] * tau * gamma[:,:, np.newaxis] / b[:-1,:,np.newaxis]
         # nullify probs for eliminated states
         gamma_m[:-1, np.logical_not(self._avail_states), :] = 0.0
         return gamma_m
-    
-    def train_baumwelch(self, seqs, rtol, max_iter, avails=None):
+
+    def train_baumwelch(self, seqs, rtol, max_iter, avails=None, verbose=False):
         """ Adjust the parameters of the HMM using Baum-Welch algorithm
-        
+
         Parameters
         ----------
         seqs : list of float64 2darrays (TxZ)
@@ -364,10 +369,10 @@ class GHMM:
         max_iter : float64, optional
             maximum number of Baum-Welch iterations (stopping criterion)
         avails : list of boolean 1darrays (T), optional
-            arrays that indicate whether each element of each sequence is 
+            arrays that indicate whether each element of each sequence is
             not missing (availiable), i.e. True - not missing, False - is missing
             Note: len(avails) = K
-            
+
         Returns
         -------
         likelihood : float64
@@ -381,9 +386,9 @@ class GHMM:
         K = len(seqs)
         T = max([len(seq) for seq in seqs]) # for gamma_ms
         iteration = 0
-        p_prev = -100.0 # likelihood on previous iteration
-        p = 100.0       # likelihood on cur iteration
-        while np.abs((p_prev-p)/p) > rtol and iteration < max_iter:
+        p_prev = 1000.0     # likelihood on previous iteration
+        p = -1000.0         # likelihood on cur iteration
+        while np.abs((p_prev - p) / p) > rtol and iteration < max_iter:
             p_prev = p
             # calculate numenator and denominator for re-estimation
             pi_up = np.zeros(N)
@@ -393,15 +398,16 @@ class GHMM:
             tau_down = np.zeros(N)
             mu_up = np.zeros((N, M, Z))
             mu_sig_down = np.zeros((N, M))
-            gamma_ms = np.zeros((K,T-1,N,M))
-            sig_up = np.zeros((N, M, Z, Z))
-            for k in range(K):   
+            gamma_ms = np.zeros((K, T-1, N, M))
+            sig_up = np.zeros_like(self._sig) # NxMxZ or NxMxZxZ
+            for k in range(K):
                 # expectation
                 seq = seqs[k]
                 avail = avails[k] if avails is not None \
                                   else np.full(seq.shape[0], True, dtype=np.bool)
                 avail_t = avail[:-1]
                 b, g = self._calc_b(seq, avail)
+#                print('b', b)
                 p, alpha, c = self._calc_forward_scaled(b)
                 beta = self._calc_backward_scaled(b, c)
                 xi, gamma = self._calc_xi_gamma_scaled(b, alpha, beta)
@@ -411,7 +417,7 @@ class GHMM:
                 avail[-1] = False            # not to touch the last element
                 pi_up += gamma[0,:]
                 a_up += np.sum(xi, axis=0)
-                a_down += np.sum(gamma, axis=0)                
+                a_down += np.sum(gamma, axis=0)
                 tau_up += np.sum(gamma_ms[k][avail_t], axis=0)
                 tau_down += np.sum(gamma[avail_t], axis=0)
                 mu_up += np.einsum('tnm,tz->nmz', gamma_ms[k][avail_t], seq[avail])
@@ -434,18 +440,25 @@ class GHMM:
                         diff = self._mu - seq[t]
                         for i in range(N):
                             for m in range(M):
-                                sig_up[i,m] += gamma_ms[k,t,i,m] * \
-                                               diff[i,m] * (diff[i,m]).reshape((Z,1))
-                                           #instead of np.outer()
+                                if self._is_cov_diag():
+                                    sig_up[i,m] += gamma_ms[k,t,i,m] * \
+                                                   diff[i,m] * diff[i,m]
+                                else:
+                                    sig_up[i,m] += gamma_ms[k,t,i,m] * \
+                                                   diff[i,m] * (diff[i,m]).reshape((Z,1))
+                                                   #instead of np.outer()
             # sig re-estimation
-            self._sig = sig_up / mu_sig_down[:,:,np.newaxis,np.newaxis]
+            self._sig = sig_up / mu_sig_down[:, :, np.newaxis] \
+                        if self._is_cov_diag() \
+                        else sig_up / mu_sig_down[:, :, np.newaxis, np.newaxis]
             # remove mixture components with singular covariance matrix and
             # states where all mixtures were removed, then readjust probabilities
             self.normalize()
+            print('iter = {}, p = {}'.format(iteration, p))
             iteration += 1
         likelihood = self.calc_loglikelihood(seqs, avails)
         return likelihood, iteration
-        
+
     def normalize(self):
         """ remove mixture components with singular covariance matrix and
         states where all mixtures were removed, then readjust probabilities
@@ -457,20 +470,17 @@ class GHMM:
         tau = self._tau
         mu = self._mu
         sig = self._sig
-        global is_cov_diagonal
-        
+
         pi[np.isnan(self._pi)] = 0.0
         a[np.isnan(self._a)] = 0.0
         tau[np.isnan(self._tau)] = 0.0
         mu[np.isnan(self._mu)] = 0.0
         sig[np.isnan(self._sig)] = 0.0
-        
-        if is_cov_diagonal: 
-            for i, m in product(range(N), range(M)):
-                # make covariances diagonal again!
-                sig[i,m] = np.diag(np.diag(sig[i,m]))
+
         for i, m in product(range(N), range(M)):
-            if self._avail_states[i] and tau[i,m] != 0.0 and _is_singular(sig[i,m]):
+#            print(sig[i,m].shape)
+            if self._avail_states[i] and tau[i,m] != 0.0 and \
+               not self._is_cov_diag() and _is_singular(sig[i,m]):
                 # save the weight and then redistribute it
                 temp = tau[i,m]
                 tau[i,m] = 0.0
@@ -494,11 +504,11 @@ class GHMM:
                         a[j,idx_nonzeros] += temp / idx_nonzeros.size
                     # nullify outbound transitions
                     a[i,:] = 0.0
-        
+
     def decode_viterbi(self, seqs, avails=None):
         """ Infer the sequence of hidden states that were reached during generation
             multiple sequences version
-        
+
         Parameters
         ----------
         seqs : list of float64 2darray
@@ -506,34 +516,34 @@ class GHMM:
         avail : boolean 1darray (T)
             indicate whether element of sequence is not missing,
             i.e. True - not missing, False - is missing
-        
+
         Returns
         -------
         states_list : int 1darray
-            Inferred sequence of hidden states    
+            Inferred sequence of hidden states
         """
         K = len(seqs)
         if avails == None:
             avails = [np.full(len(seqs[k]), True, dtype=np.bool) for k in range(K)]
         states_list = []
-        for k in range(K): 
+        for k in range(K):
             states_list.append(self._decode_viterbi(seqs[k], avails[k]))
         return states_list
-        
+
     def _decode_viterbi(self, seq, avail):
         """ Infer the sequence of hidden states that were reached during generation
             single sequence version
-        
+
         seq : float64 2darray
             observation sequence
         avail : boolean 1darray (T)
             indicate whether element of sequence is not missing,
             i.e. True - not missing, False - is missing
-        
+
         Returns
         -------
         states : int 1darray
-            Inferred sequence of hidden states                
+            Inferred sequence of hidden states
         """
         T = seq.shape[0]
         N = self._n
@@ -544,7 +554,7 @@ class GHMM:
         psi = np.empty(shape=(T, N), dtype=np.int32)
         row_idx = np.arange(N) # to select max columns
         # initialization
-        delta = np.log(pi) + log_b[0, :]     
+        delta = np.log(pi) + log_b[0, :]
         # recursion
         for t in range(1,T):
             temp = delta + log_a_tr
@@ -557,12 +567,12 @@ class GHMM:
         for t in reversed(range(T-1)):
             q[t] = psi[t+1, q[t+1]]
         return q
-    
+
     def impute_by_states(self, seqs_, avails, states_list):
         """ Impute gaps according to the most probable hidden states path.
         Gap is imputed with mean that corresponds to the inferred hidden state
         and the most probable mixture component
-        
+
         Parameters
         ----------
         seqs_ : list of float64 2darray
@@ -572,7 +582,7 @@ class GHMM:
             i.e. True - not missing, False - is missing
         states_list : int 1darray
             Inferred sequence of hidden states
-            
+
         Returns
         -------
         seqs : list of float64 2darray
@@ -581,9 +591,8 @@ class GHMM:
         seqs = copy.deepcopy(seqs_)
         K = len(seqs)
         mu = self._mu
-        sig = self._sig
+        sig = self._sig if not self._is_cov_diag() else np.diag(self._sig)
         tau = self._tau
-        global is_cov_diagonal
         for k in range(K):
             seq = seqs[k]
             avail = avails[k]
@@ -593,14 +602,14 @@ class GHMM:
                 state = states[t]
                 mix_component = _get_sample_discrete_distr(tau[state,:])
                 seq[t] = np.random.multivariate_normal(mu[state, mix_component],
-                                                        sig[state, mix_component])
+                                                       sig[state, mix_component])
         return seqs
-    
-    def train_bauwelch_impute_viterbi(self, seqs, rtol, max_iter, avails, 
+
+    def train_bauwelch_impute_viterbi(self, seqs, rtol, max_iter, avails,
                                       isRegressive=False):
-        """ Train HMM with Baum-Welch by imputing missing observations using 
+        """ Train HMM with Baum-Welch by imputing missing observations using
         Viterbi decoder.
-        
+
         Parameters
         ----------
         seqs : list of float64 2darrays (TxZ)
@@ -611,12 +620,12 @@ class GHMM:
         max_iter : float64
             maximum number of Baum-Welch iterations (stopping criterion)
         avails : list of boolean 1darrays (T)
-            arrays that indicate whether each element of each sequence is 
+            arrays that indicate whether each element of each sequence is
             not missing, i.e. True - not missing, False - is missing
         isRegressive : bool, optional
             true: imputation begins from the start of sequence after each imputed gap
             false: imputation performed once
-        
+
         Returns
         -------
         p : float64
@@ -636,10 +645,10 @@ class GHMM:
             seqs_imputed = hmm0.impute_by_states(seqs, avails, states_decoded)
             p, it = self.train_baumwelch(seqs_imputed, rtol, max_iter)
         return p, it
-        
+
     def train_bauwelch_impute_mean(self, seqs, rtol, max_iter, avails, params=[10]):
         """ Train HMM with Baum-Welch by restoring gaps using mean imputation
-        
+
         Parameters
         ----------
         seqs : list of float64 2darrays (TxZ)
@@ -650,11 +659,11 @@ class GHMM:
         max_iter : float64
             maximum number of Baum-Welch iterations (stopping criterion)
         avails : list of boolean 1darrays (T)
-            arrays that indicate whether each element of each sequence is 
+            arrays that indicate whether each element of each sequence is
             not missing, i.e. True - not missing, False - is missing
         params : list of one item
             number of neighbours (default: 10)
-            
+
         Returns
         -------
         p : float64
@@ -669,10 +678,10 @@ class GHMM:
         seqs_imp = imp.impute_by_whole_seq(seqs_imp, avails_imp, method="mean")
         p, it = self.train_baumwelch(seqs_imp, rtol, max_iter)
         return p, it
-        
+
     def train_baumwelch_gluing(self, seqs, rtol, max_iter, avails):
         """ Glue segments between gaps together and then train Baum-Welch
-        
+
         Parameters
         ----------
         seqs : list of float64 2darrays (TxZ)
@@ -684,7 +693,7 @@ class GHMM:
             maximum number of Baum-Welch iterations (stopping criterion)
         avails : list of boolean 1darrays (T)
             arrays that indicate whether each element of each sequence is availiable
-        
+
         Returns
         -------
         p : float64
@@ -700,13 +709,13 @@ class GHMM:
             seqs_glued.append(glued)
         p, it = self.train_baumwelch(seqs_glued, rtol, max_iter)
         return p, it
-        
+
     def calc_derivatives(self, seqs, avails=None, wrt=None,
                          algorithm_gaps='marginalization',
                          n_neighbours=10):
         """ Calculate derivatives of loglikelihood function for the given sequences
         with respect to each HMM parameter
-        
+
         Parameters
         ----------
         seqs : list (K) of float 2darrays (TxZ)
@@ -775,7 +784,7 @@ class GHMM:
                                                               d_b_wrt_pi,
                                                               d_a_wrt_pi)
         return d_loglike_wrt_pi
-    
+
     def _calc_derivs_a(self, seq, avail, b, c, alpha):
         N = self._n
         T = len(seq)
@@ -790,7 +799,7 @@ class GHMM:
                                                                 d_b_wrt_a,
                                                                 d_a_wrt_a)
         return d_loglike_wrt_a
-    
+
     def _calc_derivs_tau(self, seq, avail, b, c, alpha, g):
         N, M, pi = self._n, self._m, self._pi
         T = len(seq)
@@ -806,7 +815,7 @@ class GHMM:
                                                                   d_b_wrt_tau,
                                                                   d_a_wrt_tau)
         return d_loglike_wrt_tau
-    
+
     def _calc_derivs_mu(self, seq, avail, b, c, alpha, g):
         N, M, Z = self._n, self._m, self._mu.shape[2]
         pi, tau, mu, sig = self._pi, self._tau, self._mu, self._sig
@@ -814,10 +823,12 @@ class GHMM:
         d_loglike_wrt_mu = np.empty((N, M, Z))
         d_a_wrt_mu = np.zeros((N, N))
         for i, m in product(range(N), range(M)): # loop over derivatives index
-            sig_inv = np.linalg.inv(sig[i, m])
+            sig_inv = np.linalg.inv(sig[i, m]) if not self._is_cov_diag() \
+                      else 1.0 / sig[i, m]
             full_d_b_wrt_mu = np.zeros((T, N, Z))
             for t in range(T): # loop over t (explicitly) and i (subtly)
                 if avail[t]:
+                    # TODO: check correctness of sig_inv in the following expression
                     full_d_b_wrt_mu[t, i] = tau[i, m] * g[t, i, m] * \
                                             (sig_inv @ (seq[t] - mu[i, m]))
                 else:
@@ -839,11 +850,13 @@ class GHMM:
         d_loglike_wrt_sig = np.empty((N, M, Z, Z))
         d_a_wrt_sig = np.zeros((N, N))
         for i, m in product(range(N), range(M)): # loop over derivatives index
-            sig_inv = np.linalg.inv(sig[i, m])
+            sig_inv = np.linalg.inv(sig[i, m]) if not self._is_cov_diag() \
+                      else 1.0 / sig[i, m]
             full_d_b_wrt_sig = np.zeros((T, N, Z, Z))
             for t in range(T): # loop over t (explicitly) and i (subtly)
                 if avail[t]:
                     temp = (seq[t] - mu[i, m])[np.newaxis].T # column vector
+                    # TODO: check correctness of sig_inv in the following expression
                     full_d_b_wrt_sig[t, i] = 0.5 * tau[i, m] * g[t, i, m] * \
                                              (sig_inv @ temp @ temp.T @ sig_inv - sig_inv)
                 else:
@@ -861,7 +874,7 @@ class GHMM:
                                d_alpha0_wrt_nu, d_b_wrt_nu, d_a_wrt_nu):
         """ Calculate derivative of loglikelihood function with respect to
         some parameter nu
-    
+
         Parameters
         ----------
         b : float 1darray (TxN)
@@ -902,7 +915,7 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, avails=None, rtol=1e-1, 
                              algorithm='marginalization', hmms0=None, verbose=False,
                              initial_guess='gmm', covariance_type='diag'):
     """ Train several hmms using baumwelch algorithm and choose the best one
-    
+
     Parameters
     ----------
     seqs : list of float64 2darrays (TxZ)
@@ -918,7 +931,7 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, avails=None, rtol=1e-1, 
     algorithm : {'marginalization', 'gluing', 'viterbi', 'mean'}
         which algorithm should be used to handle missing observations
     avails : list of boolean 1darrays (T)
-            arrays that indicate whether each element of each sequence is 
+            arrays that indicate whether each element of each sequence is
             not missing (availiable), i.e. True - not missing, False - is missing
     hmms0 : list of GHMMs, optional
         list of initial approximations of HMM parameters
@@ -932,7 +945,9 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, avails=None, rtol=1e-1, 
         determines how to make initial guess of mu and sig params
     verbose : bool, optional
         controls whether some debug info should be printed to stdout
-    
+    covariance_type : {'diag', 'full'}
+        controls the restrictions on covariance matrix form
+
     Returns
     -------
     hmm_best : GHMM
@@ -940,7 +955,7 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, avails=None, rtol=1e-1, 
     p_max : float64
         likelihood for the best hmm
     iter_best : int
-        number of iterations to train the best hmm 
+        number of iterations to train the best hmm
     n_of_best : int
         number of the initial approximation that gave the best hmm
     """
@@ -948,17 +963,30 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, avails=None, rtol=1e-1, 
                          "Invalid algorithm '{}'".format(algorithm)
     if hmms0 is None:
         if initial_guess == 'uniform':
-            mu_est, sig_est = estimate_mu_sig_uniformly(seqs, N, M, avails)
+            mu_est, _ = estimate_mu_sig_uniformly(seqs, N, M, avails,
+                                                        covariance_type=covariance_type)
         if initial_guess == 'gmm':
-            mu_est, sig_est = estimate_mu_sig_gmm(seqs, N, M, avails,
+            mu_est, _ = estimate_mu_sig_gmm(seqs, N, M, avails,
                                                   covariance_type=covariance_type)
+        # WARNING
+        if covariance_type == 'diag':
+            sig_est = np.empty((N, M, Z))
+            for i, m in product(range(N), range(M)):
+                sig_est[i, m] = np.ones(Z) * 1000.0
+        else:
+            sig_est = np.empty((N, M, Z, Z))
+            for i, m in product(range(N), range(M)):
+                sig_est[i, m] = np.diag(Z) * 1000.0
+        # /WARNING
+
         if verbose:
             print ("mu_est: {}".format(mu_est))
             print ("sig_est: {}".format(sig_est))
+
         hmms = [GHMM(N, M, Z, mu_est, sig_est, seed=np.random.randint(10000))
-                for i in range(hmms0_size-1)]       
-        # standard pi, a, tau parameters
-        hmms.append(GHMM(N,M,Z,mu_est,sig_est))
+                for i in range(hmms0_size-1)]
+        # add one hmm with standard pi, a, tau parameters
+        hmms.append(GHMM(N, M, Z, mu_est, sig_est))
     else:
         hmms = copy.deepcopy(hmms0)
     p_max = np.finfo(np.float64).min # minimal value possible
@@ -984,7 +1012,7 @@ def train_best_hmm_baumwelch(seqs, hmms0_size, N, M, Z, avails=None, rtol=1e-1, 
         if verbose:
             print ("Baum: n of approximation = {}".format(n_of_approx))
             print ("p={}".format(p))
-            print ("iteration = ".format(iteration))
+            print ("iteration = {}".format(iteration))
             print (str(hmm))
             print
         n_of_approx += 1
@@ -1007,7 +1035,7 @@ def _form_train_data_for_SVM(hmms, seqs_list, avails_list=None, wrt=None,
         for s in range(n_of_classes):
             seqs = seqs_list[s]
             avails = avails_list[s] if avails_list is not None else None
-            Xvblock.append(hmm.calc_derivatives(seqs, avails, wrt=wrt, 
+            Xvblock.append(hmm.calc_derivatives(seqs, avails, wrt=wrt,
                                                 algorithm_gaps=algorithm_gaps,
                                                 n_neighbours=n_neighbours))
         X.append(np.concatenate(Xvblock, axis=0))
@@ -1022,9 +1050,9 @@ def _form_train_data_for_SVM(hmms, seqs_list, avails_list=None, wrt=None,
 
 def train_svm_classifier(hmms, seqs_list, clf, avails_list=None, X=None, y=None, wrt=None,
                          algorithm_gaps='marginalization', n_neighbours=10):
-    """ Train svm classifier that classifies sequences based on their 
+    """ Train svm classifier that classifies sequences based on their
     derivatives of likelihood function with respect to hmm params
-    
+
     Parameters
     ----------
     hmms : list of hmms representing each of the competing classes
@@ -1037,9 +1065,9 @@ def train_svm_classifier(hmms, seqs_list, clf, avails_list=None, X=None, y=None,
         _
     wrt : list of strings {‘pi’, ‘a’, ‘tau’, ‘mu’, ‘sig’}
         with respect to which paramerers the derivatives should be taken
-        
-    len(hmms) == len(seqs_list) == len(avails_list)  
-    
+
+    len(hmms) == len(seqs_list) == len(avails_list)
+
     Returns
     -------
     clf : sklearn.svm.SVC
@@ -1076,18 +1104,18 @@ def classify_seqs_svm(seqs, hmms, clf, scaler, avails=None, wrt=None,
                       algorithm_gaps='marginalization', n_neighbours=10, X=None):
     """ Predict class label for each seq based on derivatives of likelihood
     function for that seq using SVM classifier
-    
+
     Parameters
     ----------
     seqs : list of 2darrays (TxZ)
         sequences to be classified
-    hmms : list of GHMMs 
+    hmms : list of GHMMs
         list of hmms each of which corresponds to a class
     clf : sklearn.svm.SVC
         SVM classifier
     wrt : list of strings {‘pi’, ‘a’, ‘tau’, ‘mu’, ‘sig’}
         with respect to which paramerers the derivatives should be taken
-        
+
     Returns
     -------
     predictions : list of ints
@@ -1098,13 +1126,13 @@ def classify_seqs_svm(seqs, hmms, clf, scaler, avails=None, wrt=None,
                                      algorithm_gaps=algorithm_gaps)
     X = scaler.transform(X)
     return clf.predict(X)
-    
 
-def estimate_mu_sig_uniformly(seqs, N, M, avails=None):
+
+def estimate_mu_sig_uniformly(seqs, N, M, avails=None, covariance_type='diag'):
     """ Estimate values of mu and sig basing on the sequences.
     mu elements are uniformly scattered from min to max seq element
     sig matrixes are diagonal scaled accordingly to min and max seq elements
-    
+
     Parameters
     ----------
     seqs : list of 2darrays (TxZ)
@@ -1112,23 +1140,28 @@ def estimate_mu_sig_uniformly(seqs, N, M, avails=None):
     N, M : int
         probable number of states and mixture components in HMM
     avails : list of boolean 1darrays (T), optional
-        arrays that indicate whether each element of each sequence is 
+        arrays that indicate whether each element of each sequence is
         not missing (availiable), i.e. True - not missing, False - is missing
-    
+    covariance_type : {'diag', 'full'}
+        controls the restrictions on covariance matrix form
+
     Returns
     -------
     mu : 3darray (NxMxZ)
-        means of normal distributions 
+        means of normal distributions
     sig : 4darray (NxMxZxZ)
         covariation matrix of normal distributions
     """
+    assert(covariance_type in ['diag', 'full'])
     # TODO: add more clever heuristics to this procedure
     K = len(seqs)
     Z = len(seqs[0][0])
     if avails is None:
-        avails = [np.full(shape=seqs[k].shape[0], fill_value=True, dtype=np.bool) for k in range(K)]
+        avails = [np.full(shape=seqs[k].shape[0], fill_value=True, dtype=np.bool)
+                  for k in range(K)]
     mu = np.empty((N*M,Z))
-    sig = np.empty((N,M,Z,Z))
+
+    sig = np.empty((N,M,Z,Z)) if covariance_type == 'full' else np.empty((N,M,Z))
     min_val = np.min([np.min(seqs[k][avails[k]], axis=0) for k in range(K)], axis=0)
     max_val = np.max([np.max(seqs[k][avails[k]], axis=0) for k in range(K)], axis=0)
     step = (max_val - min_val) / (N*M)
@@ -1140,7 +1173,10 @@ def estimate_mu_sig_uniformly(seqs, N, M, avails=None):
     # TODO: scale sig matrixes
     for i in range(N):
         for j in range(M):
-            sig[i,j] = np.eye(Z)
+            if covariance_type == 'diag':
+                sig[i,j] = np.ones(Z)
+            else:
+                sig[i,j] = np.eye(Z)
     return mu, sig
 
 
@@ -1150,7 +1186,7 @@ def estimate_mu_sig_gmm(seqs, N, M, avails=None, n_init=5,
     covariance matrixes of gaussian mixtures given the observation points.
     The estimation is done using gaussian mixture models (GMM).
     This is needed primarily for a good initial guess of HMM parameters.
-    
+
     Parameters
     ----------
     seqs : list (K) of ndarrays (TxZ)
@@ -1166,7 +1202,7 @@ def estimate_mu_sig_gmm(seqs, N, M, avails=None, n_init=5,
     Returns
     -------
     mu : 3darray (NxMxZ)
-        means of normal distributions 
+        means of normal distributions
     sig : 4darray (NxMxZxZ)
         covariation matrix of normal distributions
     """
@@ -1184,19 +1220,19 @@ def estimate_mu_sig_gmm(seqs, N, M, avails=None, n_init=5,
     pred = gmm.fit_predict(points)
     Z = len(seqs[0][0])
     mu = np.empty((N, M, Z))
-    sig = np.empty((N, M, Z, Z))
+    sig = np.empty((N, M, Z)) if covariance_type == 'diag' else np.empty((N, M, Z, Z))
     for i in range(N):
         local_points = points[pred == i]
         gmm = sklearn.mixture.GMM(n_components=M, covariance_type=covariance_type,
                                   n_init=n_init)
         gmm.fit_predict(local_points)
         mu[i] = np.array(gmm.means_)
-        if covariance_type == 'full':
-            sig[i] = np.array(gmm.covars_)
-        else:
-            sig_tmp = np.array(gmm.covars_)
-            for m in range(M):
-                sig[i, m] = np.diag(sig_tmp[m])
+#        if covariance_type == 'full':
+        sig[i] = np.array(gmm.covars_)
+#        else:
+#            sig_tmp = np.array(gmm.covars_)
+#            for m in range(M):
+#                sig[i, m] = np.diag(sig_tmp[m])
     return mu, sig
 
 
@@ -1205,19 +1241,19 @@ def classify_seqs_mlc(seqs, hmms, avails=None, algorithm_gaps='marginalization',
     """ Classify sequences using maximum likelihood classifier (mlc)
     Label each seq from seqs with number of the hmm which suits seq better
         'suits' i.e. has the biggest likelihood of generating tht sequence
-    
+
     Parameters
     ----------
     seqs : list of 2darrays (TxZ)
         sequences to be classified
-    hmms : list of GHMMs 
+    hmms : list of GHMMs
         list of hmms each of which corresponds to a class
     avails : list of boolean 1darrays (T), optional
         arrays that indicate whether each element of each sequence is availiable
     algorithm_gaps : algorithm to be used to fight missing values
     n_neighbours : how many neighbours to account for when imputing by the mean
         of neighbours (works only with 'mean' algorithm)
-        
+
     Returns
     -------
     predictions : int 1darray
@@ -1234,7 +1270,7 @@ def classify_seqs_mlc(seqs, hmms, avails=None, algorithm_gaps='marginalization',
         avail = copy.deepcopy(avails[k])
         if algorithm_gaps[:-1] == 'viterbi_advanced':
             # viterbi imputation with advanced decision rule
-            # calc probs of sequence imputed by each of the HMMs being 
+            # calc probs of sequence imputed by each of the HMMs being
             # generated by each of these HMMs
             probs = np.empty((len(hmms), len(hmms)))
             # label of hmm to impute
@@ -1317,21 +1353,21 @@ def _create_block_diagonal_hmm(n_clusters, N, M, Z, mu_full, sig_full, seed=None
     return GHMM(n_clusters * N, M, Z, mu_full, sig_full, a=a_full, seed=seed)
 
 
-def cluster_sequences_derivatives(seqs, n_clusters, hmms0_size, N, M, 
+def cluster_sequences_derivatives(seqs, n_clusters, hmms0_size, N, M,
                                   rtol=1e-1, max_iter=None,
                                   avails=None, algorithm='marginalization',
                                   kmeans_n_init=10,
                                   verbose=False, initial_guess='gmm',
-                                  covariance_type='diag', 
+                                  covariance_type='diag',
                                   ):
     """ Cluster sequences in space of first derivatives of likelihood function
     with respect to parameters of HMMs fitted to each sequence
-    
+
     Parameters:
     -----------
     N : int
         number of states in each HMM corresponding to one cluster
-    
+
     Returns
     -------
     labels : int 1darray (K)
@@ -1339,7 +1375,7 @@ def cluster_sequences_derivatives(seqs, n_clusters, hmms0_size, N, M,
     """
     if avails is None:
         avails = [np.full(len(seq), True, np.bool) for seq in seqs]
-    
+
     Z =  len(seqs[0][0])
     # number of states in full matrix
     N_full = n_clusters * N
@@ -1371,7 +1407,7 @@ def cluster_sequences_derivatives(seqs, n_clusters, hmms0_size, N, M,
     print("p_max, iter_best, n_of_best")
     print(p_max, iter_best, n_of_best)
     print()
-    
+
     # extract sub-hmms from the block-diagonal full_hmm
     pi_list = [hmm_full._pi[i*N:(i+1)*N] for i in range(n_clusters)]
     a_list = [hmm_full._a[i*N:(i+1)*N, i*N:(i+1)*N] for i in range(n_clusters)]
@@ -1408,23 +1444,23 @@ def cluster_sequences_derivatives(seqs, n_clusters, hmms0_size, N, M,
     kmeans = sklearn.cluster.KMeans(n_clusters, n_init=kmeans_n_init)
     labels = kmeans.fit_predict(X)
     return labels
-        
-        
+
+
 def cluster_sequences_standard():
     """ Refer to 3.1 in http://www.lx.it.pt/~mtf/MLDM_2003.pdf
     """
     pass
-        
+
 
 
 def estimate_hmm_params_by_seq_and_states(mu, sig, seqs, state_seqs):
     """ to check that sequences agrees with hmm produced it
-    
+
     Parameters
     ----------
     mu : float 3darray (NxMxZ)
         means of normal distributions
-    sig : float 4darray (NxMxZ)
+    sig : float 4darray (NxMxZ or NxMxZxZ)
         covariation matrix of normal distributions
     seq : float 2darray (TxZ)
         generated sequence
@@ -1485,7 +1521,7 @@ def _generate_discrete_distribution(n):
     """
     xs = np.array(sp.stats.uniform.rvs(size=n))
     return xs / np.sum(xs)
-    
+
 def _get_sample_discrete_distr(distr):
     """ Get sample of random value that has discrete distrubution 'distr'
         random values are 0, 1, ...
@@ -1497,37 +1533,54 @@ def _get_sample_discrete_distr(distr):
         if val < cum:
             return i
     return distr.size-1
-    
-def _my_multivariate_normal_pdf(x, mu, cov, cov_is_diagonal=False):
+
+def _my_multivariate_normal_pdf(x, mu, cov, cov_is_diagonal):
         """
         Calcs pdf of multivariate normal distribution.
         Doesn't allow singular covariation matrixes.
-        
+
         Parameters
         ----------
         cov_is_diagonal : bool
             if True then cov is considered to be a diagonal matrix (more effective)
-            
+
         Returns
         -------
         pdf : float64
             pdf of multivariate normal distribution at point x
         """
+#        print(x)
+#        print(mu)
+#        print(cov)
+#        if cov_is_diagonal:
+#            cov = np.diag(cov)
+#        return scipy.stats.multivariate_normal.pdf(x, mu, cov)
+        # WARNING!
+
         k = x.size
         if cov_is_diagonal:
-            diag = np.diag(cov)
+#            diag = np.diag(cov)
+            diag = cov
             det = np.prod(diag)
             diag = 1.0 / diag
             cov_inv = np.diag(diag)
+#            print('cov', cov)
+#            print('diag', diag)
+#            print('det', det)
+#            print('cov_inv', cov_inv)
         else: # general case
-            try:                
+            try:
                 cov_inv = np.linalg.inv(cov)
                 det = np.linalg.det(cov)
             except np.linalg.LinAlgError:
                 return 0.0
-        diff = x - mu        
+        diff = x - mu
         part1 = 1.0 / (np.sqrt((2.0*np.pi)**k * det))
         part2 = -0.5 * np.dot(np.dot(diff, cov_inv), diff)
+#        print('diff', diff)
+#        print('part1', part1)
+#        print('part2', part2)
+#        print('part1 * np.exp(part2)', part1 * np.exp(part2))
         return part1 * np.exp(part2)
 
 def _is_singular(x):
