@@ -7,6 +7,7 @@ import GaussianHMM as ghmm
 import warnings
 import time
 import itertools
+import matplotlib.pylab as plt
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -76,6 +77,20 @@ map_class_seqs, Z = load_daily_sports()
 print('data loaded')
 print()
 
+
+#==============================================================================
+# Histogram
+#==============================================================================
+for activity, seqs in zip(map_class_seqs.keys(), map_class_seqs.values()):
+    sample = np.array(seqs[0]).flatten()
+    plt.figure()
+    plt.title(activity)
+    plt.hist(sample)
+    plt.savefig("out/daily_activities_histograms/{}.png" \
+                .format(activity.replace(' ', '_').replace('/', '')))
+    plt.close()
+    #plt.show()
+raise('asd')
 
 #==============================================================================
 # preprocessing
