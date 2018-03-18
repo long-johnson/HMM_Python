@@ -454,7 +454,8 @@ class GHMM:
             # remove mixture components with singular covariance matrix and
             # states where all mixtures were removed, then readjust probabilities
             self.normalize()
-            print('iter = {}, p = {}'.format(iteration, p))
+            if verbose:
+                print('iter = {}, p = {}'.format(iteration, p))
             iteration += 1
         likelihood = self.calc_loglikelihood(seqs, avails)
         return likelihood, iteration
@@ -591,7 +592,6 @@ class GHMM:
         seqs = copy.deepcopy(seqs_)
         K = len(seqs)
         mu = self._mu
-        sig = self._sig if not self._is_cov_diag() else np.diag(self._sig)
         tau = self._tau
         for k in range(K):
             seq = seqs[k]
@@ -601,8 +601,10 @@ class GHMM:
                 # impute gaps by drawing from a mixture of multinormal distributions
                 state = states[t]
                 mix_component = _get_sample_discrete_distr(tau[state,:])
+                sig = self._sig[state, mix_component]
+                sig = sig if not self._is_cov_diag() else np.diag(sig)
                 seq[t] = np.random.multivariate_normal(mu[state, mix_component],
-                                                       sig[state, mix_component])
+                                                       sig)
         return seqs
 
     def train_bauwelch_impute_viterbi(self, seqs, rtol, max_iter, avails,
