@@ -11,6 +11,7 @@ import warnings
 import sklearn
 from sklearn.model_selection import train_test_split
 import copy
+import StandardImputationMethods as imp
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 # TODO: one vs all classification
@@ -22,8 +23,8 @@ M = 3
 Z = 3
 len_seq = 100
 rtol = 1e-5
-max_iter = 1
-hmms0_size = 1
+max_iter = 1000
+hmms0_size = 2
 n_classes = 23
 test_size = 0.25
 folder = "data/User Identification From Walking Activity Data Set/"
@@ -98,18 +99,18 @@ for activity, seqs in zip(map_class_seqs_train.keys(), map_class_seqs_train.valu
                                       covariance_type='diag',
                                       verbose=False)
     hmms.append(hmm)
-    print('pi')
-    print(hmm._pi)
-    print('a')
-    print(hmm._a)
-    print('tau')
-    print(hmm._tau)
-    print('mu')
-    for i, j in itertools.product(range(N), range(M)):
-        print('mu[{}, {}]:\n{}'.format(i, j, hmm._mu[i, j]))
-    print('sig')
-    for i, j in itertools.product(range(N), range(M)):
-        print('sig[{}, {}]:\n{}'.format(i, j, hmm._sig[i, j]))
+#    print('pi')
+#    print(hmm._pi)
+#    print('a')
+#    print(hmm._a)
+#    print('tau')
+#    print(hmm._tau)
+#    print('mu')
+#    for i, j in itertools.product(range(N), range(M)):
+#        print('mu[{}, {}]:\n{}'.format(i, j, hmm._mu[i, j]))
+#    print('sig')
+#    for i, j in itertools.product(range(N), range(M)):
+#        print('sig[{}, {}]:\n{}'.format(i, j, hmm._sig[i, j]))
     print('info')
     print('p_max', p_max)
     print('iter_best', iter_best)
@@ -198,6 +199,7 @@ for person in map_class_seqs_test.keys():
 
 # результирующий массив с точностями по процентам пропусков
 res_accs = dict()
+res_mses = dict()
 for algorithm in ALGORITHMS:
     print(algorithm)
     res_accs[algorithm] = []
@@ -213,10 +215,9 @@ for algorithm in ALGORITHMS:
             seqs, avails = make_missing_values(seqs, to_disappears, n_of_gaps)
             map_class_seqs_test_gaps[person] = seqs
             map_class_avails_test[person] = avails
-        # классифицируем последовательности с пропусками
+        # 1) классификация последовательностей с пропусками
         class_accuracies = []
         for i, person in enumerate(map_class_seqs_test_gaps.keys()):
-            print(person)
             seqs = map_class_seqs_test_gaps[person]
             avails = map_class_avails_test[person]
             pred = ghmm.classify_seqs_mlc(seqs, hmms, avails, algorithm)
@@ -224,9 +225,40 @@ for algorithm in ALGORITHMS:
             class_accuracies.append(acc)
         # добавим полученную среднюю точность в массив точностей
         res_accs[algorithm].append(np.mean(class_accuracies))
+
+        # 2) восстановление пропусков в последовательностях с пропусками
+        impute_errors = []
+        for i, person in enumerate(map_class_seqs_test_gaps.keys()):
+            hmm = hmms[i] # type: ghmm.GHMM
+            seqs_orig = map_class_seqs_test[person]
+            seqs = map_class_seqs_test_gaps[person]
+            avails = map_class_avails_test[person]
+            if algorithm == 'viterbi':
+                # восстановление с помощью алгоритма Витерби
+                states_list = hmm.decode_viterbi(seqs, avails)
+                imputed = hmm.impute_by_states(seqs, avails, states_list)
+            else:
+                # восстановление с помощью ср. арифм. соседей
+                seqs_imp, avails_imp = imp.impute_by_n_neighbours(seqs, avails, 10)
+                imputed = imp.impute_by_whole_seq(seqs, avails)
+            # среднекв. ошибка по каждой последовательности
+            mses = [np.sum((seq - seq_orig) ** 2) / len(seq) \
+                    for seq, seq_orig in zip(seqs, seqs_orig)]
+            impute_errors += mses
+        # усредним среднюю ошибку по всем последовательностям
+        res_mses[algorithm].append(np.mean(impute_errors))
+
+pd.DataFrame(res_accs).to_excel('out/user_id_test_accs.xlsx')
+pd.DataFrame(res_mses).to_excel('out/user_id_test_mses.xlsx')
+
 for algorithm in ALGORITHMS:
     plt.plot(GAP_PERCENTS, res_accs[algorithm], label=algorithm)
 plt.legend()
 plt.show()
 
-pd.DataFrame(res_accs).to_excel('out/user_id_test_accs.xlsx')
+for algorithm in ALGORITHMS:
+    plt.plot(GAP_PERCENTS, res_mses[algorithm], label=algorithm)
+plt.legend()
+plt.show()
+
+
